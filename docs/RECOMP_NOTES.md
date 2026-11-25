@@ -195,6 +195,10 @@ interpreter runs them all).
   The texture function is now TEX0's for textured primitives only. Left: a black wedge top left of the main menu,
   large triangles that by the GS's rules are opaque black (a white-to-grey palette, all alpha 0x80, black vertices);
   probably the scene's own dark structure.
+- **Texture alpha doubled.** The decoder rescaled texel alpha to 255 (0x80 = opaque) and the renderer's shader scales
+  it by 255 / 128 again, as the engine's textures carry the GS's alpha: every partly transparent texel drew at twice
+  its strength (the fonts' faint cell outlines, alpha 9 of 128, boxed every glyph and space; the main menu's light
+  beams were solid). The decoder now keeps the GS's alpha (DC_Recomp's dc_native.cpp found the same).
 - **Save states.** A state held the engine's parts and the sound modules but not the port's: its DMA register file
   and MFIFO ring (set once at boot), VIF and the VUs (the microcode is sent once at boot), the GS registers and local
   memory (textures uploaded once), the IPU streams. A loaded state ran on into a renderer that never drained its ring:

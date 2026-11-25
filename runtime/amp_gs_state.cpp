@@ -355,11 +355,11 @@ namespace amp::gs
             const uint32_t a = aemZero ? 0u : ((c & 0x8000u) ? (texa >> 32) & 0xFFu : texa & 0xFFu);
             return r | g << 8 | b << 16 | a << 24;
         }
-        uint32_t toRgba8(uint32_t c) // GS alpha 0x80 = opaque -> 255
-        {
-            const uint32_t a = c >> 24;
-            return (c & 0xFFFFFFu) | (std::min(255u, a * 255u / 128u) << 24);
-        }
+        // The texel's alpha as the GS has it (0x80 is 1.0): the renderer scales it by 255 / 128 as the GS's blending
+        // reads it. Scaled here as well, every partly transparent texel drew at twice its strength: the fonts' faint
+        // cell outlines (alpha 9 of 128) showed as a box around every glyph and space, glows and soft edges too strong.
+        // (DC_Recomp found the same: dc_native.cpp.)
+        uint32_t toRgba8(uint32_t c) { return c; }
 
         // The texture TEX0 names, decoded from the local memory (cached until a page it spans is written).
         std::shared_ptr<Texture> lookUpTexture(uint64_t tex0);
