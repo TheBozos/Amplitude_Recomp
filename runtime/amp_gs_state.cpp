@@ -696,6 +696,12 @@ namespace amp::gs
         {
             Material m;
             m.textured = (attrs >> 4) & 1u;
+            // An untextured primitive's colour is the GS's as it is (0-255); only a texture is modulated by it in 0x80
+            // units. The renderer doubled it.
+            m.directColour = !m.textured;
+            // PRIM.FGE: the colour goes toward FOGCOL by the vertices' F (XYZF2's, or the FOG register's).
+            m.fog = (attrs >> 5) & 1u;
+            m.fogColour = static_cast<uint32_t>(g_s.fogcol & 0xFFFFFFu);
             if (samplesPreviousFrame(c, attrs))
             {
                 m.fromFrame = 1;
@@ -762,6 +768,7 @@ namespace amp::gs
                 r.y = g.y;
                 r.z = float(g.z); // GS Z, larger nearer (Screen::depthMax from ZBUF's format)
                 r.rgba = colour;
+                r.fog = static_cast<float>(g.fog & 0xFFu) * (1.0f / 255.0f);
                 if (fst)
                 {
                     r.u = g.u * su;
@@ -817,7 +824,7 @@ namespace amp::gs
         // ZB_ONLY their Z (not the colour), RGB_ONLY their RGB: a second pass with the opposite test.
         struct Made
         {
-            uint64_t in[8] = {~0ull, ~0ull, ~0ull, ~0ull, ~0ull, ~0ull, ~0ull, ~0ull};
+            uint64_t in[9] = {~0ull, ~0ull, ~0ull, ~0ull, ~0ull, ~0ull, ~0ull, ~0ull, ~0ull};
             Material pass, fail;
             bool drawPass = true, twoPass = false;
             uint64_t serial = 0; // even: the pass, odd: the failing pixels
@@ -834,9 +841,10 @@ namespace amp::gs
                 return false; // ZTST NEVER
             const uint32_t fbp = c.frame & 0x1FFu;
             Made &made = g_made;
-            const uint64_t in[8] = {c.tex0, c.tex1, c.clamp, c.alpha, c.test, c.zbuf, m.attrs & 0x150u, c.frame};
+            const uint64_t in[9] = {c.tex0, c.tex1, c.clamp, c.alpha, c.test, c.zbuf, m.attrs & 0x170u, c.frame,
+                                    (m.attrs >> 5) & 1u ? g_s.fogcol : 0};
             bool changed = false;
-            for (int k = 0; k < 8; ++k)
+            for (int k = 0; k < 9; ++k)
                 changed |= in[k] != made.in[k];
             if (changed)
             {

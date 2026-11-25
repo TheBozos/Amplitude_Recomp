@@ -185,6 +185,16 @@ interpreter runs them all).
   output IRQ, with no block transfer. The SPU2 plays that area at the output position whatever writes it; the engine's
   mixer played the input only for a block transfer. BozoEngine's `Mixer::setMemoryInput` (branch
   `amp/spu2-memory-input`, opt-in) reads it from sound memory; `runtime/amp_audio.cpp` turns it on.
+- **GS colour and fog.** An untextured primitive's colour is now used as the GS uses it (0-255, `Material::directColour`;
+  the renderer doubled it as it does a texture's modulation), and PRIM.FGE fogs it toward FOGCOL by the vertices' F
+  (`Material::fog`; the translator had left fog out).
+- **The white blotches (open).** Main menu, frame 6600 of the README's pad script: a hard-edged white shape top left,
+  a black wedge, a solid white light cone. Captures are deterministic. Skipping every untextured primitive removes
+  them all; bisecting the untextured draws of a flip points at one draw of flip 3713 (`targetFor` call 5): a small
+  orange additive triangle (PRIM 0x63, ALPHA 0x68, ZTST GREATER) that fails its depth test against the sky, and that
+  changes nothing when drawn opaque. Not the backdrop, not the previous-frame afterimage, not batch merging, not the
+  textures (the cloud and sparkle textures under it decode right). Next: dump the renderer's batches of that flip
+  (material and vertex range) with and without that draw.
 - **Save states.** A state held the engine's parts and the sound modules but not the port's: its DMA register file
   and MFIFO ring (set once at boot), VIF and the VUs (the microcode is sent once at boot), the GS registers and local
   memory (textures uploaded once), the IPU streams. A loaded state ran on into a renderer that never drained its ring:
