@@ -299,6 +299,34 @@ A pad script that reaches "Boom" from boot (with `AMP_UNLOCK_ALL=1`; the arena l
 `6470:START/6,6650:CROSS/6,6900:CROSS/6,7000:CROSS/6,7100:CROSS/6,7300:CROSS/6,7500:CROSS/6,7800:CROSS/6,9000:DOWN/6,9150:DOWN/6,9400:CROSS/6,9800:CROSS/6,10200:CROSS/6`.
 The song plays from about frame 10,800 to 22,800.
 
+## Native renderer (in progress)
+
+Goal: Harmonix's draws answered at their own functions, their meshes, materials and matrices drawn through
+BozoEngine's 3D path instead of the VIF1 / VU1 / GIF packets (`runtime/amp_native.cpp`). Mapped so far:
+
+- Classes (RTTI names in the executable): RndMesh, RndMultiMesh, RndMat, RndTex, RndCam, RndEnviron, RndLight,
+  RndTransformable, RndDrawable, RndParticleSys, RndText / RndFont, RndLine, RndMovie, RndView, RndBlur, RndArena.
+- Time in a song (AMP_SAMPLE): VU1 image 8 25 %, VIF unpacks and GS packets ~20 %; the renderer's EE code is
+  `0x210000`-`0x216000`. VU1 programs: `0x3a78` (2 M runs in the survey), `0x31f0` (0.8 M), `0x2ff0`, `0x2d40`, `0x2890`,
+  `0x1ee0`.
+- VU1 image 8 (`0x31f0`): a batch header (xtop) into vf19 (the clip guard's scale), vf20-23 (the 4 x 4 matrix to clip
+  space), vf13 (colour scale), vf14 / vf15 (the viewport's scale and offset, times w), vf16-18 (the texture transform),
+  a GIF tag and a jump target (vi13); then 4 quadwords a vertex (position, then the outputs XYZ / RGBA / STQ written
+  over it: colour in `+2`, UV in `+3`), `xgkick`, a clipping path at `0x3a68`.
+- The PS2 mesh's draw `0x215f30` (vtable `0x3d2a70` slot 5; `this` is the mesh): `0x232b30` (visible?),
+  `0x215d18` (skinning: the bones at `+0x148` blend the bind pose `+0x160`, 32 bytes a vertex, into the vertices at
+  `+0xe8`, 64 bytes a vertex, with VU0 program `0x156`; returns the world transform), then for each of the material's
+  passes (the material at `+0x118`: `0x213698`, the default `0x213570`) the header and packet `0x2155b0`. The header's
+  matrix is the global `0x43c200` (the camera's view-projection) times the world transform (`0x2933b0`, a 4 x 4
+  multiply); more header words from `0x43c180`-`0x43c340` and `0x3b07e0`.
+- A mesh object (166 drawn in a song frame; `AMP_TRACE_MESHES=<flip>` prints them): vtable pointers at `+0x14`,
+  `+0xc8`, `+0xdc`, `+0x18c`, `+0x1a4` (multiple inheritance); the local transform `+0x30` and the world one `+0x70`
+  (4 x 4); the material `+0x118`; the geometry owner `+0x140` (itself for a plain mesh); `+0x164` a buffer built once by
+  `0x214150` (pointers into the heap and DMA-like records: still to decode) and its size `+0x16c`. Static meshes keep
+  no CPU-side vertices (`+0xe8` empty): the geometry is in what `0x214150` built.
+
+Next: decode `0x214150`'s buffer (the vertices and strips), then draw one mesh natively next to the GS path and compare.
+
 ## Where it stands
 
 The game boots through the logos and the intro movie (with its music) to the title screen, the menus, the FreQmaker,

@@ -68,6 +68,7 @@ namespace amp
     {
         installRender(rt, r);
         installIpu(rt, r);
+        installNative(rt, r);
         r.registerFunction(0x31a558, traceFile<kSceOpen>);
         r.registerFunction(0x31b610, traceFile<kSceGetstat>);
         r.registerFunction(0x314330, traceFile<kSceCdSearchFile>);

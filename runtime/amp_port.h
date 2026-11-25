@@ -17,6 +17,8 @@ namespace amp
     void reportRender();
     // The Movie class's IPU pictures, native (runtime/amp_ipu.cpp): its functions and its register sites.
     void installIpu(Runtime &rt, bozo::port::Registry &registry);
+    // The native renderer (runtime/amp_native.cpp): Harmonix's draws at their own functions.
+    void installNative(Runtime &rt, bozo::port::Registry &registry);
     bool ipuSite(uint8_t *ram, R5900Context *ctx, Runtime *rt, uint32_t pc);
     void reportIpu();
     // The engine's libraries (set by installAudio).
