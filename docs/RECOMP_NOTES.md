@@ -213,7 +213,8 @@ interpreter runs them all).
   FreQs of both players, difficulty, power-ups and arena to a two-player song; four players (the multitap, players
   3 and 4's scripts) play too. Remix mode goes through its menus and the remix editor (sections, effects); Duel (two FreQs, the
   AMP meters, catch phrases), Practice (from the song select's Square), Freestyle (after a song),
-  Options (game settings) and Credits work.
+  Options (game settings) and Credits work. Online goes as far as its FreQ select and backs out to the main menu
+  cleanly (the network itself is out of scope).
 - **Save states.** A state held the engine's parts and the sound modules but not the port's: its DMA register file
   and MFIFO ring (set once at boot), VIF and the VUs (the microcode is sent once at boot), the GS registers and local
   memory (textures uploaded once), the IPU streams. A loaded state ran on into a renderer that never drained its ring:
