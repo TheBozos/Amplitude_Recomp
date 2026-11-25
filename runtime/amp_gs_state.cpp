@@ -594,6 +594,88 @@ namespace amp::gs
             return false;
         }
 
+        // Render-to-texture: a frame buffer the game draws into but never displays (the track's surface: two buffers
+        // drawn each frame, FBP 0x130's 64 x 64 and 0x131's 128 x 256, then mapped over the track) is drawn into a
+        // renderer image of its own, and a texture whose TEX0 starts there samples that image instead of the local
+        // memory (where nothing is drawn: the track was the memory's leftovers, coloured noise). The image spans the
+        // buffer's width x height in GS pixels (powers of two: what the draws reach and the textures read).
+        struct Offscreen
+        {
+            uint8_t target = 0;          // the renderer's auxiliary image (1-7, 9-15)
+            uint32_t width = 0, height = 0;
+            uint32_t psm = 0;               // FRAME's
+            uint32_t drawnGeneration = 0;   // g_generation at its last draw (an upload over it since: stale)
+            float maxX = 0.0f, maxY = 0.0f; // the draws' extent
+        };
+        std::map<uint32_t, Offscreen> g_offscreen; // by FRAME.FBP
+        uint32_t powerOfTwo(float v)
+        {
+            uint32_t p = 1;
+            while (p < 4096u && float(p) < v)
+                p <<= 1;
+            return p;
+        }
+        bool displayed(uint32_t fbp)
+        {
+            return std::find(g_frameBuffers.begin(), g_frameBuffers.end(), fbp * 32u) != g_frameBuffers.end();
+        }
+        // The image a draw into FRAME's buffer goes to (null: the frame's own, or no image left).
+        Offscreen *offscreenDrawn(uint64_t frame)
+        {
+            const uint32_t fbp = frame & 0x1FFu;
+            if (g_flips < 4 || displayed(fbp))
+                return nullptr;
+            if (auto it = g_offscreen.find(fbp); it != g_offscreen.end())
+                return &it->second;
+            uint32_t used = 0;
+            for (const auto &[f, o] : g_offscreen)
+                used |= 1u << o.target;
+            for (uint8_t t = 1; t < Material::kAuxiliaryImages; ++t)
+                if (t != Material::kPreviousFrame && !(used & (1u << t)))
+                {
+                    const uint32_t width = std::max<uint32_t>((frame >> 16) & 0x3Fu, 1u) * 64u;
+                    if (static const bool trace = std::getenv("AMP_TRACE_TARGETS") != nullptr; trace)
+                        std::printf("[amp:image] flip %llu: FBP %x (FBW %u, PSM %x) drawn into image %u\n",
+                                    (unsigned long long)g_flips, fbp, unsigned((frame >> 16) & 0x3Fu),
+                                    unsigned((frame >> 24) & 0x3Fu), unsigned(t));
+                    return &g_offscreen.emplace(fbp, Offscreen{t, width, width, unsigned((frame >> 24) & 0x3Fu)})
+                                .first->second;
+                }
+            return nullptr;
+        }
+        // The image a texture samples (null: the local memory), not the one being drawn into. Its size grows to the
+        // texture's.
+        Offscreen *offscreenSampled(const Context &c, uint64_t attrs)
+        {
+            if (!((attrs >> 4) & 1u) || g_offscreen.empty())
+                return nullptr;
+            const uint32_t tbp = c.tex0 & 0x3FFFu;
+            if (tbp & 31u)
+                return nullptr;
+            auto it = g_offscreen.find(tbp / 32u);
+            if (it == g_offscreen.end() || tbp / 32u == (c.frame & 0x1FFu))
+                return nullptr;
+            Offscreen &o = it->second;
+            // The texture read as the buffer was drawn: 32 / 24-bit colour from a 32 / 24-bit buffer, 16-bit from a
+            // 16-bit one (another format reads the bytes rearranged: the local memory's, as before).
+            const uint32_t psm = (c.tex0 >> 20) & 0x3Fu;
+            const bool wide = o.psm == 0x00 || o.psm == 0x01, narrow = o.psm == 0x02 || o.psm == 0x0A;
+            if (!((wide && (psm == 0x00 || psm == 0x01)) || (narrow && (psm == 0x02 || psm == 0x0A))))
+                return nullptr;
+            // An image transfer into the buffer since it was drawn: the game reuses the memory for textures (a menu's
+            // buffer becomes a label's texture in play); the image is stale.
+            const uint32_t pages = (o.width * o.height * (narrow ? 2u : 4u) + 8191u) / 8192u;
+            for (uint32_t p = tbp / 32u; p < tbp / 32u + pages && p < 512u; ++p)
+                if (g_pageGeneration[p] > o.drawnGeneration)
+                {
+                    g_offscreen.erase(it);
+                    return nullptr;
+                }
+            o.width = std::max(o.width, 1u << ((c.tex0 >> 26) & 0xFu));
+            o.height = std::max(o.height, 1u << ((c.tex0 >> 30) & 0xFu));
+            return &o;
+        }
+
         Material material(const Context &c, uint64_t attrs)
         {
             Material m;
@@ -603,6 +685,13 @@ namespace amp::gs
                 m.fromFrame = 1;
                 m.source = Material::kPreviousFrame;
             }
+            else if (const Offscreen *s = offscreenSampled(c, attrs))
+            {
+                m.fromFrame = 1;
+                m.source = s->target;
+            }
+            if (const Offscreen *o = offscreenDrawn(c.frame))
+                m.target = o->target;
             // FRAME's FBMSK: a channel all of whose 8 bits are masked is not written (the game's depth-only draws mask
             // all 32: textured, about 16 a frame in play).
             const uint32_t fbmsk = static_cast<uint32_t>(c.frame >> 32);
@@ -649,6 +738,7 @@ namespace amp::gs
             bool textured = false, fst = false, gouraud = false, previousFrame = false;
             const std::shared_ptr<Texture> *tex = nullptr;
             float su = 1.0f, sv = 1.0f;
+            float ku = 1.0f, kv = 1.0f; // STQ: the texture's size over its render-to-texture image's (Offscreen)
             Vertex operator()(const GsVertex &g, uint32_t colour) const
             {
                 Vertex r;
@@ -666,8 +756,8 @@ namespace amp::gs
                     // STQ: S / Q, T / Q at the vertex and Q for the renderer to interpolate them in perspective
                     // (Material::useQ), as the GS does; divided and interpolated linearly, a floor's texture smears.
                     const float q = g.q != 0.0f ? g.q : 1.0f;
-                    r.u = g.u / q;
-                    r.v = g.v / q;
+                    r.u = g.u * ku / q;
+                    r.v = g.v * kv / q;
                     r.q = q;
                 }
                 return r;
@@ -683,9 +773,19 @@ namespace amp::gs
             m.fst = (attrs >> 8) & 1u;
             m.gouraud = (attrs >> 3) & 1u;
             m.previousFrame = samplesPreviousFrame(*m.c, attrs);
-            m.tex = m.textured && !m.previousFrame ? &texture(m.c->tex0) : &none; // no copy a primitive
+            const Offscreen *image = m.previousFrame ? nullptr : offscreenSampled(*m.c, attrs);
+            m.tex = m.textured && !m.previousFrame && !image ? &texture(m.c->tex0) : &none; // no copy a primitive
             const std::shared_ptr<Texture> &tex = *m.tex;
-            if (m.fst)
+            if (image)
+            {
+                // U, V over the image: GS pixels (FST) or the texture's 0-1 (STQ) to the image's 0-1.
+                const float tw = float(1u << ((m.c->tex0 >> 26) & 0xFu)), th = float(1u << ((m.c->tex0 >> 30) & 0xFu));
+                m.su = 1.0f / (16.0f * float(image->width));
+                m.sv = 1.0f / (16.0f * float(image->height));
+                m.ku = tw / float(image->width);
+                m.kv = th / float(image->height);
+            }
+            else if (m.fst)
             {
                 // The texture's size: decoded, or TEX0's for the previous frame (u, v across the frame, 0 to 1).
                 const float tw = tex ? float(tex->width) : m.previousFrame ? float(1u << ((m.c->tex0 >> 26) & 0xFu)) : 1.0f;
@@ -855,7 +955,20 @@ namespace amp::gs
                 made = 6;
             }
             if (into) // drawn (not ZTST NEVER): into the frame being built
+            {
                 std::memcpy(place(into, alsoInto, made), tri, made * sizeof(Vertex));
+                if (into->material.target) // a render-to-texture image: when it was drawn, how far its draws reach
+                    if (auto it = g_offscreen.find(c.frame & 0x1FFu); it != g_offscreen.end())
+                    {
+                        Offscreen &o = it->second;
+                        o.drawnGeneration = g_generation;
+                        for (uint32_t i = 0; i < made; ++i)
+                        {
+                            o.maxX = std::max(o.maxX, tri[i].x);
+                            o.maxY = std::max(o.maxY, tri[i].y);
+                        }
+                    }
+            }
             const size_t madeCount = made;
             struct View
             {
@@ -1388,6 +1501,7 @@ namespace amp::gs
             std::rotate(g_frameBuffers.rbegin(), g_frameBuffers.rbegin() + 1, g_frameBuffers.rend());
             g_frameBuffers[0] = fbp * 32u;
         }
+        g_offscreen.erase(fbp); // a buffer displayed is a frame, not an image
         if (!g_survey.empty() && g_flips % 250 == 0)
         {
             std::printf("[amp:survey] flips %llu:\n", (unsigned long long)g_flips);
@@ -1446,6 +1560,23 @@ namespace amp::gs
         // The frame's draws in submission order through the 3D path: the GS's depth test (TEST, ZBUF) on GS Z, the
         // vertices window pixels already (an identity matrix).
         static const float kIdentity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        // The render-to-texture images first (the frame's draws sample them): each buffer's width x height in GS pixels
+        // spread over the screen's coordinates, which the renderer maps onto the image.
+        for (auto &[f, list] : g_frameDraws)
+        {
+            auto it = g_offscreen.find(f);
+            if (f == fbp || list.empty() || it == g_offscreen.end())
+                continue;
+            Offscreen &o = it->second;
+            o.width = std::max(o.width, powerOfTwo(o.maxX));
+            o.height = std::max(o.height, powerOfTwo(o.maxY));
+            renderer.setTargetSize(o.target, static_cast<uint16_t>(o.width), static_cast<uint16_t>(o.height));
+            const float toImage[16] = {screen.width / float(o.width), 0, 0, 0, 0, screen.height / float(o.height), 0, 0,
+                                       0, 0, 1, 0, 0, 0, 0, 1};
+            for (const Batch &b : list)
+                if (b.material.target == o.target && b.first + b.count <= renderer.builtVertices())
+                    renderer.drawRange(b.material, toImage, b.first, b.count, b.texture);
+        }
         if (auto it = g_frameDraws.find(fbp); it != g_frameDraws.end())
             for (const Batch &b : it->second)
             {

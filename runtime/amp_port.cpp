@@ -69,6 +69,39 @@ namespace amp
             ctx->pc = ra;
         }
 
+        // sceCdStRead(sectors, buffer, mode, error *) (0x3156e8): the engine's stream, all or nothing without waiting.
+        // The movie player reads 8 sectors at a time without waiting (mode 0, 0x1afa38) and demuxes them in as many
+        // sceMpegDemuxPss calls as the demux needs, the next one at `buffer + 0x4000 - bytes left` (0x1af580): it takes
+        // for granted that a read brought all 8 (a console's drive fills the stream's ring a bank at a time). The
+        // engine's ring fills a sector at a time and a read brought what was there: after a 7-sector read the player
+        // skipped a sector, with the sound packet in it, and every sample after it was read a byte off (the PCM
+        // packets are 4,073 bytes: odd): the logos', the intro's and the title's sound was white noise. Here a read
+        // without waiting brings its sectors once they are all there, else none (the player reads again next time).
+        void streamRead(uint8_t *, R5900Context *ctx, Runtime *rt)
+        {
+            bozo::libs::Libraries *l = libraries();
+            const bozo::libs::Function *f = l ? l->find("sceCdStRead") : nullptr;
+            bozo::libs::Guest g(*rt, ctx);
+            const uint32_t n = g.arg(0), mode = g.arg(2), errorAt = g.arg(3), ra = ctx->r[31].uw[0];
+            if (l && mode == 0u)
+            {
+                bozo::libs::CdState &cd = l->cd;
+                cd.advance(l->now(g));
+                if (cd.produced - cd.delivered < n)
+                {
+                    if (errorAt)
+                        g.write32(errorAt, 0);
+                    ctx->r[2].sd[0] = 0;
+                    ctx->pc = ra;
+                    return;
+                }
+            }
+            if (f)
+                f->handler(*l, g);
+            if (ctx->pc == 0x3156e8u) // answered (not a wait)
+                ctx->pc = ra;
+        }
+
         void returnZero(uint8_t *, R5900Context *ctx, Runtime *)
         {
             ctx->r[2].ud[0] = 0;
@@ -91,6 +124,7 @@ namespace amp
         r.registerFunction(0x31b610, traceFile<kSceGetstat>);
         r.registerFunction(0x314330, traceFile<kSceCdSearchFile>);
         r.registerFunction(0x315088, traceCdRead); // sceCdRead
+        r.registerFunction(0x3156e8, streamRead); // sceCdStRead
         // The USB keyboard (libusbkb, USBKB.IRX's RPC server 0x80000211) serves online chat only. The game's keyboard
         // init 0x28b148 (sceUsbKbInit 0x310618 binds the server in a loop that never ends without the module), its end
         // 0x28b1c8 and its per-frame poll 0x28b1f0 do nothing: no keyboard is ever connected.

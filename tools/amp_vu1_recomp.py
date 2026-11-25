@@ -1,0 +1,650 @@
+"""amp_vu1_recomp.py <SCUS_972.58> <out dir> [--files N]: the game's VU1 microprograms recompiled to C++.
+
+Amplitude's VU1 code is in its executable and goes to VU1 once, at boot: eleven MPG uploads from the executable's data
+(UPLOADS below: where each lands in VU1 code memory, its pairs and the EE address it is read from, found with
+AMP_VU_SURVEY=1; the code itself is read from the player's executable). The uploads' code as contiguous runs of pairs
+is compiled: an "image" becomes one C++ function that runs a program from any of its entries (runtime/amp_vu.h).
+From Shinobido_WOTN_Recomp's tools/shino_vu1_recomp.py, which finds Shinobido's packets by their shape instead.
+
+The compiled code does what runtime/amp_vu1.cpp's interpreter does, pair by pair, with the same operations
+(runtime/amp_vu.h): the upper instruction computed from the registers before the lower one, committed after it; the
+branches' delay slot; the E bit ending the program after the next pair; Q landing 7 pairs after DIV / SQRT (13 after
+RSQRT) or at WAITQ; FMAND / FMEQ / FMOR reading the MAC flags of 4 pairs earlier. What no instruction can observe is
+left out: Q's countdown where no result can be pending, the MAC flags' history where nothing reads it within 4 pairs,
+the MAC flags themselves where the next result replaces them unread. The rarer instructions run through the
+interpreter's own functions. A pair the compiled code cannot follow (a branch in a delay slot, an E bit on a branch)
+hands the program to the interpreter there.
+
+Writes <out dir>/amp_vu1_table.cpp and amp_vu1_NN.cpp (N files, 8 by default). Nothing from the disc is kept in the
+repository: the output goes to the build.
+"""
+import os
+import re
+import struct
+import sys
+
+MASK = 0x3FF8  # VU1's code memory, bytes
+PAIRS = 2048
+SEGMENT = 64   # pairs: runtime/amp_vu.h's kSegmentPairs
+
+
+# ---- The packets ------------------------------------------------------------------------------------------------------
+
+def load_segments(elf):
+    phoff = struct.unpack_from('<I', elf, 0x1C)[0]
+    phnum = struct.unpack_from('<H', elf, 0x2C)[0]
+    out = []
+    for i in range(phnum):
+        kind, off, va, _, size, _, _, _ = struct.unpack_from('<8I', elf, phoff + i * 32)
+        if kind == 1 and size:
+            out.append((va, elf[off:off + size]))
+    return out
+
+
+# (VU1 pair address, pairs, EE address): the MPG uploads of the boot (AMP_VU_SURVEY=1), every one only once.
+UPLOADS = [
+    (0x06c, 256, 0x3ad578), (0x16c, 147, 0x3add80), (0x260, 205, 0x3acf08), (0x373, 48, 0x3acd80),
+    (0x3d7, 2, 0x3acd68), (0x3dc, 167, 0x3ac828), (0x508, 6, 0x3ac7f0), (0x512, 63, 0x3ac5f0),
+    (0x5a8, 88, 0x3ac328), (0x63e, 256, 0x3ab980), (0x73e, 51, 0x3ac188),
+]
+
+
+def read_ee(elf, address, size):
+    for va, data in load_segments(elf):
+        if va <= address and address + size <= va + len(data):
+            return data[address - va:address - va + size]
+    raise SystemExit(f'amp_vu1_recomp: 0x{address:x} is not in the executable')
+
+
+def packets(elf):
+    """(EE address, [(micro pair address, pairs, bytes)]) for every upload."""
+    for base, num, address in UPLOADS:
+        yield address, [(base, num, read_ee(elf, address, num * 8))]
+
+
+def images(elf):
+    """The uploads' code as contiguous runs of pairs: (EE address of the run's first pair, first pair, [(lo, up)])."""
+    pairs, sources = {}, {}
+    for address, loads in packets(elf):
+        for base, num, data in loads:
+            for k in range(num):
+                pair = (base + k) & (PAIRS - 1)
+                pairs[pair] = struct.unpack_from('<2I', data, 8 * k)
+                sources[pair] = address + 8 * k
+    ordered = sorted(pairs)
+    result, start = [], 0
+    while start < len(ordered):
+        end = start
+        while end + 1 < len(ordered) and ordered[end + 1] == ordered[end] + 1:
+            end += 1
+        first = ordered[start]
+        result.append((sources[first], first, [pairs[p] for p in ordered[start:end + 1]]))
+        start = end + 1
+    return result
+
+
+# ---- Decoding (runtime/amp_vu1.cpp's decodePair and decodeLower) --------------------------------------------------
+
+ARITH_TABLE = [
+    (0, 1), (0, 1), (0, 1), (0, 1), (1, 1), (1, 1), (1, 1), (1, 1), (2, 1), (2, 1), (2, 1), (2, 1),
+    (3, 1), (3, 1), (3, 1), (3, 1), (5, 1), (5, 1), (5, 1), (5, 1), (6, 1), (6, 1), (6, 1), (6, 1),
+    (4, 1), (4, 1), (4, 1), (4, 1), (4, 2), (5, 3), (4, 3), (6, 3), (0, 2), (2, 2), (0, 3), (2, 3),
+    (1, 2), (3, 2), (1, 3), (3, 3), (0, 0), (2, 0), (4, 0), (5, 0), (1, 0), (3, 0), (-1, 0), (6, 0)]
+ACCQ = [(0, 2), (2, 2), (0, 3), (2, 3), (1, 2), (3, 2), (1, 3), (3, 3)]
+BRANCHES = {'B', 'BAL', 'JR', 'JALR', 'IBEQ', 'IBNE', 'IBLTZ', 'IBGTZ', 'IBLEZ', 'IBGEZ'}
+
+
+class Pair:
+    def __init__(self, lo, up, pair):
+        self.lo, self.up, self.pair = lo, up, pair
+        pc = pair * 8
+        self.pc = pc
+        self.loi = bool((up >> 31) & 1)
+        self.end = bool((up >> 30) & 1)
+        # upper
+        self.dest, self.ft, self.fs, self.fd, self.bc = (up >> 21) & 15, (up >> 16) & 31, (up >> 11) & 31, (up >> 6) & 31, up & 3
+        self.kind, self.fn, self.operand, self.to_acc = 'scalar', 0, 0, False
+        op = up & 0x3F
+        if op < 0x3C:
+            if op < 0x30 and ARITH_TABLE[op][0] >= 0:
+                self.arith(*ARITH_TABLE[op], False)
+            elif op == 0x2E:
+                self.kind = 'opmsub'
+        else:
+            sp = ((up >> 6) & 0x1F) << 2 | (up & 3)
+            if sp <= 0x0F:
+                self.arith(sp >> 2, 1, True)
+            elif 0x18 <= sp <= 0x1B:
+                self.arith(4, 1, True)
+            elif sp == 0x1C:
+                self.arith(4, 2, True)
+            elif sp == 0x1E:
+                self.arith(4, 3, True)
+            elif 0x20 <= sp <= 0x27:
+                self.arith(*ACCQ[sp - 0x20], True)
+            elif sp == 0x28:
+                self.arith(0, 0, True)
+            elif sp == 0x29:
+                self.arith(2, 0, True)
+            elif sp == 0x2A:
+                self.arith(4, 0, True)
+            elif sp == 0x2C:
+                self.arith(1, 0, True)
+            elif sp == 0x2D:
+                self.arith(3, 0, True)
+            elif sp == 0x2F:
+                self.kind = 'nop'
+            elif 0x10 <= sp <= 0x13:
+                self.kind, self.fn = 'itof', sp - 0x10
+            elif 0x14 <= sp <= 0x17:
+                self.kind, self.fn = 'ftoi', sp - 0x14
+            elif sp == 0x1D:
+                self.kind = 'abs'
+            elif sp == 0x1F:
+                self.kind = 'clip'
+            elif sp == 0x2E:
+                self.kind = 'opmula'
+        self.sets_mac = self.kind == 'arith' and self.fn <= 4
+        # Whether the upper instruction writes the MAC flags: the arithmetic but on vf0; OPMSUB, OPMULA (upper()).
+        if self.kind == 'arith':
+            self.writes_mac = self.sets_mac and (self.to_acc or self.fd != 0)
+        elif self.kind == 'opmula':
+            self.writes_mac = True
+        elif self.kind == 'opmsub':
+            self.writes_mac = self.fd != 0
+        else:
+            self.writes_mac = False
+        # XTOP / XITOP (decoded from the lower word whatever the I bit says, as decodePair does)
+        self.xtop, self.xreg = 0, 0
+        if (lo >> 31) and (lo & 0x3F) >= 0x3C:
+            lsp = ((lo >> 6) & 0x1F) << 2 | (lo & 3)
+            if lsp in (0x68, 0x69):
+                self.xtop, self.xreg = (1 if lsp == 0x68 else 2), (lo >> 16) & 15
+        # lower
+        self.is_, self.it, self.id = (lo >> 11) & 31, (lo >> 16) & 31, (lo >> 6) & 31
+        self.ldest, self.fsf, self.ftf = (lo >> 21) & 15, (lo >> 21) & 3, (lo >> 23) & 3
+        imm11 = ((lo & 0x7FF) ^ 0x400) - 0x400
+        self.imm = 0
+        self.target = (pc + 8 + imm11 * 8) & MASK
+        self.lk = self.decode_lower(lo, imm11)
+
+    def arith(self, fn, operand, to_acc):
+        self.kind, self.fn, self.operand, self.to_acc = 'arith', fn, operand, to_acc
+
+    def decode_lower(self, lo, imm11):
+        if self.loi:
+            return 'NONE'
+        if lo >> 31:
+            op = lo & 0x3F
+            simple = {0x30: 'IADD', 0x31: 'ISUB', 0x34: 'IAND', 0x35: 'IOR'}
+            if op in simple:
+                return simple[op]
+            if op == 0x32:
+                self.imm = (((lo >> 6) & 31) ^ 16) - 16
+                return 'IADDI'
+            if op < 0x3C:
+                return 'SLOW'
+            sp = ((lo >> 6) & 0x1F) << 2 | (lo & 3)
+            return {0x30: 'MOVE', 0x31: 'MR32', 0x34: 'LQI', 0x35: 'SQI', 0x36: 'LQD', 0x37: 'SQD', 0x38: 'DIV',
+                    0x39: 'SQRT', 0x3A: 'RSQRT', 0x3B: 'WAITQ', 0x3C: 'MTIR', 0x3D: 'MFIR', 0x3E: 'ILWR', 0x3F: 'ISWR',
+                    0x68: 'NONE', 0x69: 'NONE', 0x6C: 'XGKICK'}.get(sp, 'SLOW')
+        op = lo >> 25
+        if op in (0x00, 0x01, 0x04, 0x05):
+            self.imm = imm11
+            return {0x00: 'LQ', 0x01: 'SQ', 0x04: 'ILW', 0x05: 'ISW'}[op]
+        if op in (0x08, 0x09):
+            self.imm = ((lo >> 10) & 0x7800) | (lo & 0x7FF)
+            return 'IADDIU' if op == 0x08 else 'ISUBIU'
+        if op in (0x10, 0x11, 0x12, 0x13):
+            self.imm = lo & 0xFFFFFF
+            return {0x10: 'FCEQ', 0x11: 'FCSET', 0x12: 'FCAND', 0x13: 'FCOR'}[op]
+        return {0x18: 'FMEQ', 0x1A: 'FMAND', 0x1B: 'FMOR', 0x1C: 'FCGET', 0x20: 'B', 0x21: 'BAL', 0x24: 'JR',
+                0x25: 'JALR', 0x28: 'IBEQ', 0x29: 'IBNE', 0x2C: 'IBLTZ', 0x2D: 'IBGTZ', 0x2E: 'IBLEZ',
+                0x2F: 'IBGEZ'}.get(op, 'SLOW')
+
+    @property
+    def branch(self):
+        return self.lk in BRANCHES
+
+    @property
+    def reads_history(self):  # FMEQ, FMAND, FMOR
+        return not self.loi and not (self.lo >> 31) and (self.lo >> 25) in (0x18, 0x1A, 0x1B)
+
+    @property
+    def reads_status(self):  # FSEQ, FSSET, FSAND, FSOR
+        return not self.loi and not (self.lo >> 31) and 0x14 <= (self.lo >> 25) <= 0x17
+
+
+# ---- One image ----------------------------------------------------------------------------------------------------------
+
+EXIT = ('exit',)
+
+
+class Image:
+    def __init__(self, ident, address, first, code):
+        self.id, self.address, self.first = ident, address, first
+        self.pairs = {first + k: Pair(lo, up, first + k) for k, (lo, up) in enumerate(code)}
+        self.last = first + len(code) - 1
+        self.code = code
+
+    def has(self, p):
+        return self.first <= p <= self.last
+
+    def bail(self, p):
+        """A pair the compiled code hands to the interpreter (before running it)."""
+        x = self.pairs[p]
+        if not (x.branch or x.end):
+            return False
+        if x.branch and x.end:
+            return True
+        s = p + 1
+        if not self.has(s):
+            return True
+        slot = self.pairs[s]
+        return slot.branch or slot.end
+
+    def next_pair(self, p):
+        return p + 1 if self.has(p + 1) and (p + 1) * 8 <= MASK else None
+
+    # Nodes: ('s', p) the pair p entered on its own; ('c', p) the pair p as the delay slot of p - 1 (or after its E bit).
+    def successors(self, node):
+        kind, p = node
+        x = self.pairs[p]
+        if kind == 's':
+            if self.bail(p):
+                return []
+            if x.branch or x.end:
+                return [('c', p + 1)]
+            n = self.next_pair(p)
+            return [('s', n)] if n is not None else [EXIT]
+        b = self.pairs[p - 1]
+        if b.end:
+            return [EXIT]
+        out = []
+        if b.lk in ('JR', 'JALR'):
+            return [EXIT]
+        t = b.target // 8
+        out.append(('s', t) if self.has(t) else EXIT)
+        if b.lk not in ('B', 'BAL'):
+            n = self.next_pair(p)
+            out.append(('s', n) if n is not None else EXIT)
+        return out
+
+    def analyse(self):
+        # Every pair can be entered (a program's start, a JR's target, where the interpreter hands a program back),
+        # with what the code there assumes checked at the entry: Q's countdown no longer than the code counts down.
+        entries = [('s', p) for p in self.pairs]
+        reach, todo = set(), list(entries)
+        while todo:
+            n = todo.pop()
+            if n == EXIT or n in reach:
+                continue
+            reach.add(n)
+            todo.extend(self.successors(n))
+        self.reach = reach
+        self.entry_set = set(p for _, p in entries)
+        bails = {n for n in reach if n[0] == 's' and self.bail(n[1])}
+        # Q: the largest countdown possible at each node's start (forward) from the DIV / SQRT / RSQRT before it; an
+        # entry with a longer one pending goes to the interpreter (the dispatch's check).
+        q = {n: 0 for n in reach}
+        work = list(reach)
+        while work:
+            n = work.pop()
+            if n in bails:
+                continue
+            x = self.pairs[n[1]]
+            out = max(q[n] - 1, 0)
+            if x.lk in ('DIV', 'SQRT'):
+                out = 7
+            elif x.lk == 'RSQRT':
+                out = 13
+            elif x.lk == 'WAITQ':
+                out = 0
+            for s in self.successors(n):
+                if s != EXIT and out > q[s]:
+                    q[s] = out
+                    work.append(s)
+        self.q = q
+        # MAC history: the distance to the next reader (or exit) along any path (backward)
+        INF = 99
+        dist = {n: INF for n in reach}
+        changed = True
+        while changed:
+            changed = False
+            for n in reach:
+                if n in bails:
+                    continue
+                d = INF
+                for s in self.successors(n):
+                    if s == EXIT or s in bails:
+                        d = min(d, 1)
+                    else:
+                        d = min(d, 1 if self.pairs[s[1]].reads_history else 1 + dist[s])
+                if d < dist[n]:
+                    dist[n] = d
+                    changed = True
+        self.push = {n: dist[n] <= 4 for n in reach}
+        # MAC flags: whether a result's flags are read (by a push, a status read, the end) before the next result
+        live_in = {n: False for n in reach}
+        changed = True
+        while changed:
+            changed = False
+            for n in reach:
+                if n in bails:
+                    new = True
+                else:
+                    x = self.pairs[n[1]]
+                    out = self.live_out(n, live_in, bails)
+                    new = x.reads_status or (not x.writes_mac and (self.push[n] or out))
+                if new != live_in[n]:
+                    live_in[n] = new
+                    changed = True
+        self.live_in = live_in
+        self.bails = bails
+
+    def live_out(self, n, live_in, bails):
+        for s in self.successors(n):
+            if s == EXIT or s in bails or live_in[s]:
+                return True
+        return False
+
+    def flags(self, n):
+        x = self.pairs[n[1]]
+        return x.writes_mac and (self.push[n] or self.live_out(n, self.live_in, self.bails))
+
+
+# ---- C++ ------------------------------------------------------------------------------------------------------------------
+
+def F(r):
+    """vf r as the compiled code holds it: a local (vf0 the constant)."""
+    return 'vf0()' if r == 0 else f'f{r}'
+
+
+def I(r):
+    """vi r: a local (vi0 always 0: it is never written)."""
+    return '0u' if r & 15 == 0 else f'i{r & 15}'
+
+
+def set_vf(r, dest, value):
+    """vf r's dest lanes from value (vf0: dropped)."""
+    return '' if r == 0 else f'f{r} = blend({dest}, {value}, f{r});'
+
+
+def set_vi(r, value):
+    """vi r = value, 16 bits (vi0: dropped)."""
+    return '' if r & 15 == 0 else f'i{r & 15} = ({value}) & 0xFFFFu;'
+
+
+def emit_pair(img, node, out):
+    """One pair's code (in braces); a branch's lower instruction sets `take` / `to` of the enclosing block. The VU
+    registers are the function's locals (f1-f31, fa ACC, i1-i15); what goes to the interpreter's functions is stored
+    to the unit first and loaded back after (AMP_STORE / AMP_LOAD)."""
+    p = node[1]
+    x = img.pairs[p]
+    w = out.append
+    w('    {')
+    w('        ++n;')
+    if img.q[node] > 0:
+        w('        if (qd && --qd == 0) qv = qp;')
+    if x.kind == 'arith':
+        b = {0: F(x.ft), 1: f'bcast({F(x.ft)}, {x.bc})', 2: '_mm_set1_ps(qv)', 3: '_mm_set1_ps(iv)'}[x.operand]
+        w(f'        const __m128 u = arithV({x.fn}, {F(x.fs)}, {b}, fa);')
+    elif x.kind in ('itof', 'ftoi'):
+        w(f'        const __m128 u = fromVec({x.kind}V(toVec({F(x.fs)}), {x.fn}));')
+    elif x.kind == 'abs':
+        w(f'        const __m128 u = fromVec(absV(toVec({F(x.fs)})));')
+    elif x.kind == 'clip':
+        w(f'        const uint32_t u = clipV(v.clip, toVec({F(x.fs)}), toVec({F(x.ft)}));')
+    elif x.kind == 'opmula':
+        w(f'        const __m128 u = opmulaV({F(x.fs)}, {F(x.ft)}, fa);')
+    elif x.kind == 'opmsub':
+        w(f'        const __m128 u = opmsubV({F(x.fs)}, {F(x.ft)}, fa, {F(x.fd)});')
+    elif x.kind == 'scalar':
+        w('        AMP_STORE;')
+        w('        UpperResult u;')
+        w(f'        upperSlow(0x{x.up:08x}u, u);')
+    if x.xtop and x.xreg:
+        w(f'        i{x.xreg} = {"top" if x.xtop == 1 else "itop"}() & 0xFFFFu;')
+    lk, s_, t_, d_ = x.lk, x.is_, x.it, x.id
+    imm = f'{x.imm & 0xFFFFFFFF}u'
+    first = next((f for f in range(4) if (x.ldest >> (3 - f)) & 1), None)  # ILW's field
+    L = {
+        'NONE': '',
+        'IADD': set_vi(d_, f'{I(s_)} + {I(t_)}'),
+        'ISUB': set_vi(d_, f'{I(s_)} - {I(t_)}'),
+        'IADDI': set_vi(t_, f'{I(s_)} + {imm}'),
+        'IAND': set_vi(d_, f'{I(s_)} & {I(t_)}'),
+        'IOR': set_vi(d_, f'{I(s_)} | {I(t_)}'),
+        'IADDIU': set_vi(t_, f'{I(s_)} + {x.imm}u'),
+        'ISUBIU': set_vi(t_, f'{I(s_)} - {x.imm}u'),
+        'MOVE': set_vf(t_, x.ldest, F(s_)),
+        'MR32': set_vf(t_, x.ldest, f'mr32V({F(s_)})'),
+        'LQI': f'{set_vf(t_, x.ldest, f"load1(v, {I(s_)})")} {set_vi(s_, f"{I(s_)} + 1")}',
+        'SQI': f'store1V(v, {I(t_)}, {F(s_)}, {x.ldest}); {set_vi(t_, f"{I(t_)} + 1")}',
+        'LQD': f'{set_vi(s_, f"{I(s_)} - 1")} {set_vf(t_, x.ldest, f"load1(v, {I(s_)})")}',
+        'SQD': f'{set_vi(t_, f"{I(t_)} - 1")} store1V(v, {I(t_)}, {F(s_)}, {x.ldest});',
+        'LQ': set_vf(t_, x.ldest, f'load1(v, {I(s_)} + {imm})'),
+        'SQ': f'store1V(v, {I(t_)} + {imm}, {F(s_)}, {x.ldest});',
+        'ILW': set_vi(t_, f'word1(v, {I(s_)} + {imm}, {first})') if first is not None else '',
+        'ILWR': set_vi(t_, f'word1(v, {I(s_)}, {first})') if first is not None else '',
+        'ISW': ' '.join(f'setWord1(v, {I(s_)} + {imm}, {f}, {I(t_)});' for f in range(4) if (x.ldest >> (3 - f)) & 1),
+        'ISWR': ' '.join(f'setWord1(v, {I(s_)}, {f}, {I(t_)});' for f in range(4) if (x.ldest >> (3 - f)) & 1),
+        'MTIR': set_vi(t_, f'asU(lane({F(s_)}, {x.fsf}))'),
+        'MFIR': set_vf(t_, x.ldest, f'mfirV({I(s_)})'),
+        'DIV': f'qp = divideResult(0, lane({F(s_)}, {x.fsf}), lane({F(t_)}, {x.ftf})); qd = 7;',
+        'SQRT': f'qp = divideResult(1, lane({F(s_)}, {x.fsf}), lane({F(t_)}, {x.ftf})); qd = 7;',
+        'RSQRT': f'qp = divideResult(2, lane({F(s_)}, {x.fsf}), lane({F(t_)}, {x.ftf})); qd = 13;',
+        'WAITQ': 'if (qd) { qv = qp; qd = 0; }',
+        'FMEQ': set_vi(t_, f'{I(s_)} == v.macHistory[v.macAt & 3u]'),
+        'FMAND': set_vi(t_, f'{I(s_)} & v.macHistory[v.macAt & 3u]'),
+        'FMOR': set_vi(t_, f'{I(s_)} | v.macHistory[v.macAt & 3u]'),
+        'FCEQ': f'i1 = (v.clip & 0xFFFFFFu) == {x.imm}u;',
+        'FCSET': f'v.clip = {x.imm}u;',
+        'FCAND': f'i1 = (v.clip & {x.imm}u) != 0;',
+        'FCOR': f'i1 = ((v.clip | {x.imm}u) & 0xFFFFFFu) == 0xFFFFFFu;',
+        'FCGET': set_vi(t_, 'v.clip & 0xFFFu'),
+        'XGKICK': f'kick({I(s_)}, 0x{x.pc:04x}u);',
+        'SLOW': f'AMP_STORE; lowerSlow(0x{x.lo:08x}u, 0x{x.pc:04x}u); AMP_LOAD;',
+        'B': 'take = true;',
+        'BAL': f'{set_vi(t_, f"{(x.pc + 16) // 8}u")} take = true;',
+        'JR': f'to = {I(s_)} * 8u;',
+        'JALR': f'to = {I(s_)} * 8u; {set_vi(t_, f"{(x.pc + 16) // 8}u")}',
+        'IBEQ': f'take = {I(s_)} == {I(t_)};',
+        'IBNE': f'take = {I(s_)} != {I(t_)};',
+        'IBLTZ': f'take = s16({I(s_)}) < 0;',
+        'IBGTZ': f'take = s16({I(s_)}) > 0;',
+        'IBLEZ': f'take = s16({I(s_)}) <= 0;',
+        'IBGEZ': f'take = s16({I(s_)}) >= 0;',
+    }[lk]
+    if L.strip():
+        w('        ' + L.strip())
+    flags = 'true' if img.flags(node) else 'false'
+    if x.kind == 'arith':
+        if x.to_acc:
+            w(f'        fa = blend({x.dest}, u, fa);')
+            if flags == 'true':
+                w(f'        setFlags(v, {x.dest}, u);')
+        elif x.fd != 0: # vf0: no write, no flags
+            w(f'        f{x.fd} = blend({x.dest}, u, f{x.fd});')
+            if flags == 'true':
+                w(f'        setFlags(v, {x.dest}, u);')
+    elif x.kind in ('itof', 'ftoi', 'abs'):
+        if set_vf(x.ft, x.dest, 'u'):
+            w('        ' + set_vf(x.ft, x.dest, 'u'))
+    elif x.kind == 'clip':
+        w('        v.clip = u;')
+    elif x.kind == 'opmula': # ACC's xyz (upper() writes OPMULA's result with dest xyz)
+        w('        fa = blend(14, u, fa);')
+        if flags == 'true':
+            w('        setFlags(v, 14, u);')
+    elif x.kind == 'opmsub':
+        if x.fd != 0:
+            w(f'        f{x.fd} = blend({x.dest}, u, f{x.fd});')
+            if flags == 'true':
+                w(f'        setFlags(v, {x.dest}, u);')
+    elif x.kind == 'scalar':
+        w('        AMP_STORE;')
+        w('        commitSlow(u);')
+        w('        AMP_LOAD;')
+    if img.push[node]:
+        w('        macPush(v);')
+    if x.loi:
+        w(f'        iv = asF(0x{x.lo:08x}u);')
+    w('    }')
+
+
+def segment_check(img, p, ret):
+    return f'    if (!segmentOk({img.id}, {p // SEGMENT})) return {ret};'
+
+
+def emit_image(img):
+    img.analyse()
+    out = []
+    w = out.append
+    name = f'amp_vu1_image_{img.id}'
+    w(f'// From the packet at 0x{img.address:x}: pairs 0x{img.first:03x} to 0x{img.last:03x}.')
+    w(f'uint32_t {name}(Unit &v, uint32_t pc)')
+    w('{')
+    w('    uint32_t guard = 0, n = 0, ret = 0; // n: the pairs run (v.pairs, on the way out)')
+    w('    __m128 ' + ', '.join(f'f{r}' for r in range(1, 32)) + ', fa;')
+    w('    uint32_t ' + ', '.join(f'i{r}' for r in range(1, 16)) + ';')
+    w('    int qd; // Q: its countdown, its value, the value pending; I')
+    w('    float qv, qp, iv;')
+    w('    AMP_LOAD;')
+    w('dispatch:')
+    w('    switch (pc)')
+    w('    {')
+    for p in sorted(img.entry_set):
+        node = ('s', p)
+        if node in img.bails:
+            continue
+        if img.q[node] >= 13:
+            w(f'    case 0x{p * 8:04x}u: goto L{p:03x};')
+        else:
+            w(f'    case 0x{p * 8:04x}u: if (qd > {img.q[node]}) return pc | kInterpret; goto L{p:03x};')
+    w('    default: return pc | kInterpret;')
+    w('    }')
+    for p in range(img.first, img.last + 1):
+        node = ('s', p)
+        if node not in img.reach:
+            continue
+        x = img.pairs[p]
+        w(f'L{p:03x}:')
+        if p % SEGMENT == 0 and p != img.first:
+            w(segment_check(img, p, f'0x{p * 8:04x}u'))
+        if node in img.bails:
+            w(f'    return 0x{p * 8:04x}u | kInterpret;')
+            continue
+        if not (x.branch or x.end):
+            emit_pair(img, node, out)
+            n = img.next_pair(p)
+            if n is None:
+                w(f'    return 0x{((p + 1) * 8) & MASK:04x}u;')
+            elif ('s', n) not in img.reach:
+                raise AssertionError(f'image {img.id}: pair {n:x} after {p:x} unreachable')
+            continue
+        s = p + 1
+        if s // SEGMENT != p // SEGMENT:
+            w(segment_check(img, s, f'0x{p * 8:04x}u | kInterpret'))
+        w('    {')
+        w('    bool take = false;')
+        w('    uint32_t to = 0;')
+        emit_pair(img, node, out)
+        emit_pair(img, ('c', s), out)
+        slot_pc = (p * 8 + 8) & MASK
+        if x.end:
+            w(f'    v.tpc = 0x{slot_pc + 8:04x}u;')
+            w('    return kEnd;')
+        elif x.lk in ('JR', 'JALR'):
+            w(f'    pc = to & 0x{MASK:04x}u;')
+            w(f'    if (pc < 0x{img.first * 8:04x}u || pc > 0x{img.last * 8:04x}u || !segmentOk({img.id}, pc / {SEGMENT * 8})) return pc;')
+            w('    goto dispatch;')
+        else:
+            t = x.target // 8
+            if img.has(t):
+                jump = f'goto L{t:03x};'
+                if t // SEGMENT not in (p // SEGMENT, s // SEGMENT) and t % SEGMENT != 0:
+                    jump = f'{{ if (!segmentOk({img.id}, {t // SEGMENT})) return 0x{t * 8:04x}u; goto L{t:03x}; }}'
+                if t <= p:
+                    jump = f'{{ if (++guard > (1u << 22)) return 0x{t * 8:04x}u | kInterpret; {jump} }}'
+            else:
+                jump = f'return 0x{t * 8:04x}u;'
+            if x.lk in ('B', 'BAL'):
+                w(f'    {jump}')
+            else:
+                w(f'    if (take) {jump}')
+                n = img.next_pair(s)
+                if n is None:
+                    w(f'    return 0x{(slot_pc + 8) & MASK:04x}u;')
+                else:
+                    w(f'    goto L{n:03x};')
+        w('    }')
+    w('out:')
+    w('    AMP_STORE;')
+    w('    v.pairs += n;')
+    w('    return ret;')
+    w('}')
+    # every way out goes through `out`: the registers stored back to the unit, the pairs run counted (RET)
+    return [line if line.strip() == 'return ret;' else re.sub(r'\breturn ([^;]+);', r'RET(\1);', line) for line in out]
+
+
+def main():
+    args = sys.argv[1:]
+    files = 8
+    if '--files' in args:
+        i = args.index('--files')
+        files = int(args[i + 1])
+        del args[i:i + 2]
+    elf_path, out_dir = args
+    elf = open(elf_path, 'rb').read()
+    os.makedirs(out_dir, exist_ok=True)
+    found = images(elf)
+    imgs = [Image(i, address, first, code) for i, (address, first, code) in enumerate(found)]
+    # spread the images over the files by size
+    buckets = [[] for _ in range(files)]
+    sizes = [0] * files
+    for img in sorted(imgs, key=lambda m: -len(m.code)):
+        k = sizes.index(min(sizes))
+        buckets[k].append(img)
+        sizes[k] += len(img.code)
+    head = ['// Generated by tools/amp_vu1_recomp.py from the player\'s SCUS_972.58: do not edit, do not commit.',
+            '#include "amp_vu.h"', '',
+            '// The VU registers in the function\'s locals: loaded from the unit on the way in, stored back on the way out',
+            '// and around the interpreter\'s functions.',
+            '#define AMP_LOAD do { f1 = _mm_loadu_ps(v.vf[1].f); f2 = _mm_loadu_ps(v.vf[2].f); f3 = _mm_loadu_ps(v.vf[3].f); f4 = _mm_loadu_ps(v.vf[4].f); f5 = _mm_loadu_ps(v.vf[5].f); f6 = _mm_loadu_ps(v.vf[6].f); f7 = _mm_loadu_ps(v.vf[7].f); f8 = _mm_loadu_ps(v.vf[8].f); f9 = _mm_loadu_ps(v.vf[9].f); f10 = _mm_loadu_ps(v.vf[10].f); f11 = _mm_loadu_ps(v.vf[11].f); f12 = _mm_loadu_ps(v.vf[12].f); f13 = _mm_loadu_ps(v.vf[13].f); f14 = _mm_loadu_ps(v.vf[14].f); f15 = _mm_loadu_ps(v.vf[15].f); f16 = _mm_loadu_ps(v.vf[16].f); f17 = _mm_loadu_ps(v.vf[17].f); f18 = _mm_loadu_ps(v.vf[18].f); f19 = _mm_loadu_ps(v.vf[19].f); f20 = _mm_loadu_ps(v.vf[20].f); f21 = _mm_loadu_ps(v.vf[21].f); f22 = _mm_loadu_ps(v.vf[22].f); f23 = _mm_loadu_ps(v.vf[23].f); f24 = _mm_loadu_ps(v.vf[24].f); f25 = _mm_loadu_ps(v.vf[25].f); f26 = _mm_loadu_ps(v.vf[26].f); f27 = _mm_loadu_ps(v.vf[27].f); f28 = _mm_loadu_ps(v.vf[28].f); f29 = _mm_loadu_ps(v.vf[29].f); f30 = _mm_loadu_ps(v.vf[30].f); f31 = _mm_loadu_ps(v.vf[31].f); fa = _mm_loadu_ps(v.acc.f); i1 = v.vi[1]; i2 = v.vi[2]; i3 = v.vi[3]; i4 = v.vi[4]; i5 = v.vi[5]; i6 = v.vi[6]; i7 = v.vi[7]; i8 = v.vi[8]; i9 = v.vi[9]; i10 = v.vi[10]; i11 = v.vi[11]; i12 = v.vi[12]; i13 = v.vi[13]; i14 = v.vi[14]; i15 = v.vi[15]; qd = v.qDelay; qv = v.q; qp = v.pendingQ; iv = v.i; } while (0)',
+            '#define AMP_STORE do { _mm_storeu_ps(v.vf[1].f, f1); _mm_storeu_ps(v.vf[2].f, f2); _mm_storeu_ps(v.vf[3].f, f3); _mm_storeu_ps(v.vf[4].f, f4); _mm_storeu_ps(v.vf[5].f, f5); _mm_storeu_ps(v.vf[6].f, f6); _mm_storeu_ps(v.vf[7].f, f7); _mm_storeu_ps(v.vf[8].f, f8); _mm_storeu_ps(v.vf[9].f, f9); _mm_storeu_ps(v.vf[10].f, f10); _mm_storeu_ps(v.vf[11].f, f11); _mm_storeu_ps(v.vf[12].f, f12); _mm_storeu_ps(v.vf[13].f, f13); _mm_storeu_ps(v.vf[14].f, f14); _mm_storeu_ps(v.vf[15].f, f15); _mm_storeu_ps(v.vf[16].f, f16); _mm_storeu_ps(v.vf[17].f, f17); _mm_storeu_ps(v.vf[18].f, f18); _mm_storeu_ps(v.vf[19].f, f19); _mm_storeu_ps(v.vf[20].f, f20); _mm_storeu_ps(v.vf[21].f, f21); _mm_storeu_ps(v.vf[22].f, f22); _mm_storeu_ps(v.vf[23].f, f23); _mm_storeu_ps(v.vf[24].f, f24); _mm_storeu_ps(v.vf[25].f, f25); _mm_storeu_ps(v.vf[26].f, f26); _mm_storeu_ps(v.vf[27].f, f27); _mm_storeu_ps(v.vf[28].f, f28); _mm_storeu_ps(v.vf[29].f, f29); _mm_storeu_ps(v.vf[30].f, f30); _mm_storeu_ps(v.vf[31].f, f31); _mm_storeu_ps(v.acc.f, fa); v.vi[1] = static_cast<uint16_t>(i1); v.vi[2] = static_cast<uint16_t>(i2); v.vi[3] = static_cast<uint16_t>(i3); v.vi[4] = static_cast<uint16_t>(i4); v.vi[5] = static_cast<uint16_t>(i5); v.vi[6] = static_cast<uint16_t>(i6); v.vi[7] = static_cast<uint16_t>(i7); v.vi[8] = static_cast<uint16_t>(i8); v.vi[9] = static_cast<uint16_t>(i9); v.vi[10] = static_cast<uint16_t>(i10); v.vi[11] = static_cast<uint16_t>(i11); v.vi[12] = static_cast<uint16_t>(i12); v.vi[13] = static_cast<uint16_t>(i13); v.vi[14] = static_cast<uint16_t>(i14); v.vi[15] = static_cast<uint16_t>(i15); v.qDelay = qd; v.q = qv; v.pendingQ = qp; v.i = iv; } while (0)',
+            '#define RET(x) do { ret = (x); goto out; } while (0)', '',
+            'namespace amp::vu', '{']
+    stats = {'pairs': 0, 'bails': 0}
+    for k, bucket in enumerate(buckets):
+        lines = list(head)
+        for img in sorted(bucket, key=lambda m: m.id):
+            words = ', '.join(f'0x{lo:08x}u, 0x{up:08x}u' for lo, up in img.code)
+            lines.append(f'extern const uint32_t amp_vu1_code_{img.id}[] = {{{words}}};')
+            lines.extend(emit_image(img))
+            stats['pairs'] += len(img.code)
+            stats['bails'] += len(img.bails)
+        lines.append('} // namespace amp::vu')
+        write(os.path.join(out_dir, f'amp_vu1_{k:02d}.cpp'), lines)
+    table = list(head)
+    for img in imgs:
+        table.append(f'extern const uint32_t amp_vu1_code_{img.id}[];')
+        table.append(f'uint32_t amp_vu1_image_{img.id}(Unit &v, uint32_t pc);')
+    table.append('const Image kImages[] = {')
+    for img in imgs:
+        table.append(f'    {{0x{img.first:03x}u, {len(img.code)}u, amp_vu1_code_{img.id}, amp_vu1_image_{img.id}, 0x{img.address:x}u}},')
+    table.append('};')
+    table.append(f'const uint32_t kImageCount = {len(imgs)};')
+    table.append('} // namespace amp::vu')
+    write(os.path.join(out_dir, 'amp_vu1_table.cpp'), table)
+    print(f'amp_vu1_recomp: {len(imgs)} images, {stats["pairs"]} pairs, '
+          f'{stats["bails"]} pairs left to the interpreter')
+
+
+def write(path, lines):
+    with open(path, 'w') as f:
+        f.write('\n'.join(lines) + '\n')
+
+
+if __name__ == '__main__':
+    main()

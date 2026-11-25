@@ -28,8 +28,8 @@ Built on [BozoEngine](https://github.com/TheBozos/BozoEngine), The Bozos' own to
 **A song plays from start to end.** The game boots through the logos and the intro movie to the title screen, the
 menus, the FreQmaker, the arena and song selection, and plays a whole song ("Boom", P.O.D. vs. The Crystal Method, in
 Neotropolis) with its music streamed from the disc: the gems are hit, the tracks turn on, the score climbs and the
-results screen follows. Drawn natively at about 52 frames a second (every VU1 program still interpreted). The track's
-surface is still drawn as coloured noise.
+results screen follows. It runs at full speed (60 frames a second, the VU1 programs compiled to C++), the intro movie
+with its sound, the track's surface and the HUD's monitor drawn by render-to-texture.
 
 | Milestone | |
 |---|:---:|
@@ -44,10 +44,13 @@ surface is still drawn as coloured noise.
 | Harmonix's sound modules (SYNTH_S, SOFTFX_S) compiled and running on the native mixer | ✅ |
 | FreQmaker, arena and song selection, the training with its narration | ✅ |
 | A complete song: streamed music, gems, scoring, energy, results screen | ✅ |
-| The track's surface texture (coloured noise), white blotches, movie sound (noise) | 🔧 |
+| Render-to-texture (the track's surface, the FreQ's monitor, HUD messages) | ✅ |
+| Intro movie sound | ✅ |
+| Full speed: the VU1 programs compiled to C++ (60 frames a second with room to spare) | ✅ |
+| White blotches on the title and on highlighted labels | 🔧 |
 | Input and sound timing checked against the console | ⏳ |
 | Memory-card saves, multitap (four players) | ⏳ |
-| Full speed (compiled VU1 programs, then native draws) | ⏳ |
+| Native draws (the renderer answered at its own functions, not through VIF1 / GS packets) | ⏳ |
 | Linux build | ⏳ |
 
 ✅ works · 🔧 in progress · ⏳ not reached yet
@@ -88,8 +91,10 @@ disc files (game/) ──► scripts/symbols.sh ──► recomp/amp_symbols.txt
   itself; `bozo_symbolmap.py` names the SDK functions by matching them against executables that keep their symbols.
 - Game data lives in `GEN/MAIN.ARK`, a Harmonix ARK archive; each song is a multitrack stream in `AUDIO/*.STR`.
 - Drawing (bring-up path): Harmonix's renderer sends its packets through a DMA ring (MFIFO) to VIF1 and the VU1. The
-  port answers every DMA register access of the renderer natively, runs the VIF1 codes and VU1 programs, and draws the
-  resulting GS packets with BozoEngine's renderer (the GS translator and VU1 interpreter come from Shinobido_WOTN_Recomp).
+  port answers every DMA register access of the renderer natively, runs the VIF1 codes and the VU1 programs (compiled
+  to C++ from the executable at build time by `tools/amp_vu1_recomp.py`), and draws the resulting GS packets with
+  BozoEngine's renderer, off-screen buffers as render targets (the GS translator and the VU1 compiler come from
+  Shinobido_WOTN_Recomp).
 - The intro movie is decoded by BozoEngine's native libmpeg (FFmpeg); the menus' animated textures (`ipum` streams the
   game plays on the IPU) by FFmpeg's IPU decoder.
 - Sound: Sony's LIBSD, SDRDRV, SCRTCHPD and Harmonix's SYNTH_S and SOFTFX_S are compiled offline from the disc to C++
@@ -145,7 +150,7 @@ Builds and timed runs take the shared benchmark lock alone (`scripts/bench_run.s
 | `BozoEngine/` | The engine (submodule): recompiler, runtime, native libraries, tools |
 | `recomp/` | The symbol map, the names read by hand, the library functions kept as the game's own code |
 | `runtime/` | The runner (`amp_main.cpp`), the port's overrides (`amp_port.cpp`), the renderer's DMA and flip (`amp_render.cpp`), the GS translator and VU interpreters (`amp_gs*.cpp`, `amp_vu1.cpp`), the IPU pictures (`amp_ipu.cpp`), the sound modules (`amp_audio.cpp`) |
-| `tools/` | `amp_prepare.py` (the ELF as bozo-recomp reads it), `amp_bozo_audio.py` (the sound modules), `amp_ark.py` (MAIN.ARK), the naming aids (`amp_disasm.py`, `amp_callers.py`, `amp_rpc_names.py`) |
+| `tools/` | `amp_prepare.py` (the ELF as bozo-recomp reads it), `amp_bozo_audio.py` (the sound modules), `amp_vu1_recomp.py` (the VU1 programs), `amp_ark.py` (MAIN.ARK), the naming aids (`amp_disasm.py`, `amp_callers.py`, `amp_rpc_names.py`) |
 | `runtime/app/` | The window build's icon, manifest and Windows resources |
 | `scripts/` | Disc extraction, symbol map, build, run, shared bench lock |
 | `docs/` | [RECOMP_NOTES.md](docs/RECOMP_NOTES.md), the branding (`docs/branding/make_logo.py`) |

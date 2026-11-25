@@ -101,7 +101,23 @@ add_library(amp_audio_code OBJECT ${amp_audio_code})
 target_link_libraries(amp_audio_code PRIVATE bozo_runtime_headers)
 target_compile_options(amp_audio_code PRIVATE -O1 -w)
 
-set(amp_runtime_sources ${amp_port_sources} $<TARGET_OBJECTS:amp_audio_code>)
+# The VU1 microprograms, recompiled from the microcode the executable uploads at boot (tools/amp_vu1_recomp.py,
+# runtime/amp_vu.h): the interpreter in runtime/amp_vu1.cpp runs what they do not cover.
+set(amp_vu1_gen ${CMAKE_BINARY_DIR}/amp_vu1_gen)
+set(amp_vu1_sources ${amp_vu1_gen}/amp_vu1_table.cpp)
+foreach(i RANGE 7)
+  list(APPEND amp_vu1_sources ${amp_vu1_gen}/amp_vu1_0${i}.cpp)
+endforeach()
+add_custom_command(OUTPUT ${amp_vu1_sources}
+  COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/amp_vu1_recomp.py ${amp_elf} ${amp_vu1_gen} --files 8
+  DEPENDS ${amp_elf} ${CMAKE_SOURCE_DIR}/tools/amp_vu1_recomp.py
+  COMMENT "Recompiling the VU1 microprograms")
+add_library(amp_vu1_code OBJECT ${amp_vu1_sources})
+target_include_directories(amp_vu1_code PRIVATE ${CMAKE_SOURCE_DIR}/runtime)
+target_link_libraries(amp_vu1_code PRIVATE bozo_runtime_headers)
+target_compile_options(amp_vu1_code PRIVATE -O2 -w -ffp-contract=off)
+
+set(amp_runtime_sources ${amp_port_sources} $<TARGET_OBJECTS:amp_audio_code> $<TARGET_OBJECTS:amp_vu1_code>)
 list(FILTER amp_runtime_sources EXCLUDE REGEX "amp_main\\.cpp$")
 
 add_executable(amp-headless runtime/amp_main.cpp ${amp_runtime_sources})

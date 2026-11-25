@@ -137,6 +137,21 @@ interpreter runs them all).
 - A picture written into the shown frame buffer by IMAGE transfers (the movie player uploads each decoded picture
   straight into it) becomes the frame's backdrop (`Renderer::setBackdrop`) while its pages were written within the last
   8 flips.
+- **Render-to-texture.** The game draws into frame buffers it never displays and maps them as textures: in play the
+  track's surface (FBP `0x130`, 64 x 64 CT16, and `0x131`, 128 x 256 CT32, drawn each frame), the FreQ's monitor
+  (`0x170`), the HUD's messages ("Your energy is dropping"). Only the displayed buffer was drawn, so those textures were
+  the local memory's leftovers: the track was coloured noise. `runtime/amp_gs_state.cpp` (`Offscreen`) gives each such
+  buffer one of the renderer's auxiliary images (`Material::target`), sized to the buffer (FBW x 64 by what its draws
+  reach, powers of two, at least what is sampled), draws its batches first at the flip with a matrix spreading the
+  buffer over the screen's coordinates, and a texture whose TBP is the buffer's samples the image (`fromFrame`,
+  `source`; FST U / V and STQ scaled to the image). An image is only used for a texture of its own colour depth, and is
+  dropped once an image transfer writes into its buffer after it was drawn: the menus draw into buffers whose memory
+  later holds uploaded textures (FBP `0xf3` becomes the "DRUMS" label's T8 texture in play).
+- **The VU1 programs are compiled.** All of Amplitude's VU1 code is uploaded once at boot, eleven MPGs from the
+  executable's data (`0x3ab980`-`0x3ae188`, found with `AMP_VU_SURVEY=1`). `tools/amp_vu1_recomp.py` (Shinobido's
+  `shino_vu1_recomp.py` with that list in place of its packet scan) compiles them at build time into 9 images, 1,289
+  pairs, none left to the interpreter; `runtime/amp_vu1.cpp` runs an image while its code is what is loaded. In play
+  the VU1 went from 12-14 ms a frame to 1.6-2 ms: 115-175 frames a second unpaced, a steady 60 in the window.
 
 ## Movies
 
@@ -150,8 +165,14 @@ interpreter runs them all).
   runner gives the engine 32 KB inside `.text` (`0x101000-0x109000`: recompiled code, never read as data), and
   `_calloc_r` stays the game's own code (`recomp/amp_guest_names.txt`: its malloc and free could not be named).
   libmpeg's SDK demux (`sdkDemux`) stalls this movie (its sound callback is not Shinobido's): left off.
-- **The movie's sound is noise** (a WAV of the intro: flat spectrum, left and right uncorrelated): the PCM the movie
-  carries is read in the wrong format somewhere. Open.
+- **The movie's sound was white noise** (logos, intro, then a noise loop on the title). The player reads the stream 8
+  sectors at a time without waiting (`sceCdStRead` mode 0, `0x1afa38`) and gives them to `sceMpegDemuxPss` in as many
+  calls as the demux takes, the next one at `buffer + 0x4000 - bytes left` (`0x1af580`): it takes for granted that a read
+  brought all 8 sectors (a console's drive fills the stream ring a bank at a time). The engine's ring fills a sector at a
+  time and a read brings what is there: after a 7-sector read the player skipped a sector, the sound packet in it was
+  lost, and the PCM packets being 4,073 bytes (odd), every sample after it was read a byte off. The port's `sceCdStRead`
+  (`runtime/amp_port.cpp`) brings a read without waiting all its sectors or none. The intro now plays its music.
+  Found by following the bytes: the IOP buffer (`AMP_TRACE_SIF`), the player's ring at `0x436d88`, the demux's packets.
 
 ## IPU pictures: the animated textures
 
@@ -221,6 +242,8 @@ Play-test switches of the runner (`runtime/amp_main.cpp`), for unattended runs:
 | `AMP_DUMP_RAM_AT=<frame>,...` | RAM written to `build/ram_<frame>.bin` |
 | `AMP_WATCH=<address>,...` | a RAM word printed whenever it changes |
 | `AMP_TRACE_FILES=1`, `AMP_TRACE_RPC=1`, `AMP_TRACE_RPC_DUMP=<frame>` | file system calls, the drivers' RPC calls |
+| `AMP_TRACE_SIF=<most>` | the SIF DMA transfers into the IOP's memory (address, size, first bytes) |
+| `AMP_TRACE_TARGETS=1` | the render-to-texture images and each flip's draws by frame buffer |
 
 A pad script that reaches "Boom" from boot (with `AMP_UNLOCK_ALL=1`; the arena list opens on Blastlands):
 `6470:START/6,6650:CROSS/6,6900:CROSS/6,7000:CROSS/6,7100:CROSS/6,7300:CROSS/6,7500:CROSS/6,7800:CROSS/6,9000:DOWN/6,9150:DOWN/6,9400:CROSS/6,9800:CROSS/6,10200:CROSS/6`.
@@ -228,16 +251,17 @@ The song plays from about frame 10,800 to 22,800.
 
 ## Where it stands
 
-The game boots through the logos and the intro movie to the title screen, the menus, the FreQmaker, the arena and song
-selection, and **a whole song, scored, to the results screen**. About 52 frames a second in the window with every VU1
-program interpreted. Seen so far: the track's surface drawn as coloured noise (a texture or CLUT case of the
-translator), white blotches on the title's scene and over highlighted menu labels, the intro's noisy sound.
+The game boots through the logos and the intro movie (with its music) to the title screen, the menus, the FreQmaker,
+the arena and song selection, and **a whole song, scored, to the results screen**, at 60 frames a second with the VU1
+programs compiled. Seen so far: white blotches on the title's scene and over highlighted menu labels; the title screen
+is silent after the intro, and the intro's last 27 seconds or so are black while its music plays on (both as before
+the stream fix; not compared with the console yet).
 
 ## Next steps
 
-1. The track's surface texture; the white blotches; the intro movie's sound.
+1. The white blotches; the title's sound against the console.
 2. Timing: input and sound against the beat, compared with the console.
-3. Speed: compile the VU1 programs (Shinobido's `tools/shino_vu1_recomp.py`), then answer the renderer's draws at its
-   own functions instead of through VIF1/VU1/GIF.
-4. Upstream to BozoEngine: the IRX translator fix, the mixer's output IRQ; a native `sceIoctl` status poll and
-   `sceSifInitCmd`; the libmpeg defaults (TMB's reference layout, the heap after `.bss`) that break other games.
+3. Native draws: the renderer answered at its own functions instead of through VIF1 / VU1 / GIF.
+4. Upstream to BozoEngine: the IRX translator fix and the mixer's output IRQ are merged; still a native `sceIoctl`
+   status poll and `sceSifInitCmd`, the libmpeg defaults (TMB's reference layout, the heap after `.bss`) that break
+   other games, and a stream ring filled by banks (`sceCdStRead`).

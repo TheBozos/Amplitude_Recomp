@@ -106,7 +106,20 @@ namespace amp
         addAmpAudioImages(*sound);
         libraries.audioProvider = [](uint64_t cycle) { return g_mixer = sound->advanceTo(cycle); };
         libraries.sif.transfer = [](uint32_t address, const uint8_t *bytes, uint32_t count)
-        { sound->writeBuffer(address, bytes, count); };
+        {
+            // AMP_TRACE_SIF=<most>: the SIF DMA transfers into the IOP's memory (address, size, first bytes).
+            static const char *trace = std::getenv("AMP_TRACE_SIF");
+            static int traced = 0;
+            if (trace && traced < std::atoi(trace))
+            {
+                ++traced;
+                std::printf("[amp:sif] %x <- %u bytes:", address, count);
+                for (uint32_t i = 0; i < count && i < 32; ++i)
+                    std::printf(" %02x", bytes[i]);
+                std::printf("\n");
+            }
+            sound->writeBuffer(address, bytes, count);
+        };
         libraries.sif.allocateBuffer = [](uint32_t bytes) { return sound->allocateBuffer(bytes); };
         libraries.sif.freeBuffer = [](uint32_t address) { return sound->freeBuffer(address); };
         libraries.sif.resetProvider = [] { sound->reset(); };
