@@ -157,6 +157,10 @@ int main(int argc, char **argv)
     // writes TMB's fixed addresses and takes 0x600 bytes from its heap. The stream callbacks' 32-byte entries still come
     // from that heap (the SDK demux, sdkDemux, stalls Amplitude's movie: its sound callback is not Shinobido's).
     host.libraries().mpegOptions.referenceLayout = false;
+    // The movie player takes a short sceCdStRead (no wait) for a whole one and skipped a sector: its sound packet
+    // lost, every sample after it a byte off (the intro's sound was white noise). Reads bring all their sectors or
+    // none (CdState::wholeStreamReads).
+    host.libraries().cd.wholeStreamReads = true;
     // The engine's own heap (libmpeg's callback entries, any native allocation): 32 KB inside .text, which runs
     // recompiled and is never read as data. Its default, from the heap start to the end of RAM, is where the game's own
     // allocator works: both handed out the same memory (the task manager's list header at 0x549ea0 was overwritten).

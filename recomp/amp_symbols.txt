@@ -130,6 +130,7 @@ _sysbitPtr 0x30ea60
 sceGsResetPath 0x30ea90
 sceGsSyncPath 0x30eb30
 sceIpuSync 0x30eee0
+sceIpuInit 0x30efb0
 sceGsResetGraph 0x30f1e8
 sceGsGetGParam 0x30f378
 sceGsSetDefDispEnv 0x30f438

@@ -16,24 +16,6 @@ namespace amp
 {
     namespace
     {
-        // sceIoctl(fd, request, arg) (0x31b0b8, the fileio client: RPC function 5). The game opens its files with
-        // O_NOWAIT (0x8001) and polls request 1 into *arg until it is no longer 1 (busy): the file layer 0x1af6a0
-        // after sceOpen, the reads 0x28f528/0x28f598/0x28f6b0 after sceRead. The engine's sceOpen/sceRead finish before
-        // they return, so every operation is already done: *arg = 0. No other request is used by the game.
-        void ioctl(uint8_t *ram, R5900Context *ctx, Runtime *)
-        {
-            const uint32_t request = ctx->r[5].uw[0], arg = ctx->r[6].uw[0];
-            int32_t result = -1;
-            if (request == 1 && arg)
-            {
-                const uint32_t done = 0;
-                std::memcpy(ram + (arg & 0x1FFFFFFu), &done, 4);
-                result = 0;
-            }
-            ctx->r[2].sd[0] = result;
-            ctx->pc = ctx->r[31].uw[0];
-        }
-
         // The file system's calls (sceOpen, sceGetstat, sceCdSearchFile): the engine's own answer; AMP_TRACE_FILES=1
         // prints each one's path and result.
         template <const char *Name> void traceFile(uint8_t *, R5900Context *ctx, Runtime *rt)
@@ -69,39 +51,6 @@ namespace amp
             ctx->pc = ra;
         }
 
-        // sceCdStRead(sectors, buffer, mode, error *) (0x3156e8): the engine's stream, all or nothing without waiting.
-        // The movie player reads 8 sectors at a time without waiting (mode 0, 0x1afa38) and demuxes them in as many
-        // sceMpegDemuxPss calls as the demux needs, the next one at `buffer + 0x4000 - bytes left` (0x1af580): it takes
-        // for granted that a read brought all 8 (a console's drive fills the stream's ring a bank at a time). The
-        // engine's ring fills a sector at a time and a read brought what was there: after a 7-sector read the player
-        // skipped a sector, with the sound packet in it, and every sample after it was read a byte off (the PCM
-        // packets are 4,073 bytes: odd): the logos', the intro's and the title's sound was white noise. Here a read
-        // without waiting brings its sectors once they are all there, else none (the player reads again next time).
-        void streamRead(uint8_t *, R5900Context *ctx, Runtime *rt)
-        {
-            bozo::libs::Libraries *l = libraries();
-            const bozo::libs::Function *f = l ? l->find("sceCdStRead") : nullptr;
-            bozo::libs::Guest g(*rt, ctx);
-            const uint32_t n = g.arg(0), mode = g.arg(2), errorAt = g.arg(3), ra = ctx->r[31].uw[0];
-            if (l && mode == 0u)
-            {
-                bozo::libs::CdState &cd = l->cd;
-                cd.advance(l->now(g));
-                if (cd.produced - cd.delivered < n)
-                {
-                    if (errorAt)
-                        g.write32(errorAt, 0);
-                    ctx->r[2].sd[0] = 0;
-                    ctx->pc = ra;
-                    return;
-                }
-            }
-            if (f)
-                f->handler(*l, g);
-            if (ctx->pc == 0x3156e8u) // answered (not a wait)
-                ctx->pc = ra;
-        }
-
         void returnZero(uint8_t *, R5900Context *ctx, Runtime *)
         {
             ctx->r[2].ud[0] = 0;
@@ -119,30 +68,16 @@ namespace amp
     {
         installRender(rt, r);
         installIpu(rt, r);
-        r.registerFunction(0x31b0b8, ioctl); // sceIoctl
         r.registerFunction(0x31a558, traceFile<kSceOpen>);
         r.registerFunction(0x31b610, traceFile<kSceGetstat>);
         r.registerFunction(0x314330, traceFile<kSceCdSearchFile>);
         r.registerFunction(0x315088, traceCdRead); // sceCdRead
-        r.registerFunction(0x3156e8, streamRead); // sceCdStRead
         // The USB keyboard (libusbkb, USBKB.IRX's RPC server 0x80000211) serves online chat only. The game's keyboard
         // init 0x28b148 (sceUsbKbInit 0x310618 binds the server in a loop that never ends without the module), its end
         // 0x28b1c8 and its per-frame poll 0x28b1f0 do nothing: no keyboard is ever connected.
         r.registerFunction(0x28b148, returnZero);
         r.registerFunction(0x28b1c8, returnZero);
         r.registerFunction(0x28b1f0, returnZero);
-        // sceIpuInit (0x30efb0: IPU_CTRL = 0x40000000, the reset, then a wait on its busy bit). Called by libmpeg's
-        // sceMpegInit (native) and by the game's own IPU decoder set-up 0x2163c0, which then installs its DMA channel 3
-        // (from IPU) handler. There is no IPU to reset; what the game then asks of the IPU is answered where it asks.
-        r.registerFunction(0x30efb0, returnZero);
-        // sceSifSetDChain (0x317300, syscall 120): the SIF DMA chain armed before a sceSifSetDma (native: the data
-        // reaches the IOP modules at once). Nothing to arm. (Onimusha_Recomp answers it the same way.)
-        r.registerFunction(0x317300, returnZero);
-        r.registerFunction(0x317310, returnZero); // isceSifSetDChain
-        // sceSifInitCmd (0x318c28): the SIF command layer's set-up, called directly by the game's sound set-up
-        // 0x24d2e0 (and by sceSifInitRpc, native). The engine's SIF has nothing to set up (its sceSifInitRpc and
-        // sceSifExitCmd do nothing either).
-        r.registerFunction(0x318c28, returnZero);
         // The network configuration's clients (online play, out of scope): the set-up 0x253438 calls 0x26c648
         // (eznetcnf: sceSifSearchModuleByName, then a bind loop on EZNCNF_S's server 0x75499128) and 0x26c8f8
         // (eznetctl, EZNCTL_S's 0x75488909), and ignores what they return. Neither module is loaded: both do nothing,

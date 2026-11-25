@@ -41,6 +41,7 @@ EnableIntc 0x317988 # DI, _EnableIntc (0x316c60), EI: SDK 2.6's EnableIntc
 DisableDmac 0x3179f0 # DI, _DisableDmac (0x316c90), EI: SDK 2.6's DisableDmac
 EnableDmac 0x317a58 # DI, _EnableDmac (0x316c80), EI: SDK 2.6's EnableDmac
 sceMpegInit 0x307f28 # 176 bytes (Shinobido's is 176): _alalcInit, the IPU reset 0x30efb0 (IPU_CTRL = 0x40000000) and memset; called once by the movie player 0x1aec48 before sceMpegCreate
+sceIpuInit 0x30efb0 # IPU_CTRL = 0x40000000 (the reset) then a wait on its busy bit: libipu's sceIpuInit, called by sceMpegInit (0x307f28) and by the game's own IPU set-up 0x2163c0
 sceMpegCreate 0x307fd8 # the movie player 0x1aec48 calls it right after sceMpegInit, then sceMpegAddStrCallback twice and sceMpegAddCallback three times; it calls sceMpegReset (0x308260) as libmpeg does (528 bytes; Shinobido 568, TMB 572)
 sceMpegDelete 0x3081e8 # `jr ra; v0 = 1` (8 bytes, as TMB's and Shinobido's), right after sceMpegCreate as in libmpeg; called by the movie player
 sceMpegGetPicture 0x3081f8 # (mp, image, mb count): image & 0x0fffffff | 0x20000000 at +0xd8, the count at +0xe4, the RGB32 flag +0xb0 = 1, then the decode 0x308480: sceMpegGetPicture (SDK 3.0 keeps them at +0xec/+0xf8)
