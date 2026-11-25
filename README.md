@@ -51,7 +51,7 @@ with its sound, the track's surface and the HUD's monitor drawn by render-to-tex
 | The title's and menus' glows and highlighted labels (were white blotches) | ✅ |
 | Input and sound timing checked against the console | ⏳ |
 | Save states (in the window: save and load slots) | ✅ |
-| Memory-card saves (the FreQs and the progress, in `%APPDATA%\Amplitude_Recomp`) | ✅ |
+| Memory-card saves (the FreQs and the progress, in `%APPDATA%\Amplitude_Recomp`, or a `user` folder next to the executable) | ✅ |
 | Every arena's songs, two players (Multiplayer, Game) | ✅ |
 | Four players (multitap), Remix mode | ✅ |
 | Native draws (the renderer answered at its own functions, not through VIF1 / GS packets) | ⏳ |
@@ -138,6 +138,9 @@ lasts about 6,200 frames; `--pad-script` takes `frame:BUTTON/frames` entries (e.
 runner prints where the game stops and what is not native yet. Play-test switches (`AMP_UNLOCK_ALL`,
 `AMP_INFINITE_ENERGY`, `AMP_AUTOPILOT`, `--pad-script2`..`4` for players 2-4) and a pad script that reaches a song are in
 [docs/RECOMP_NOTES.md](docs/RECOMP_NOTES.md#gameplay).
+
+The player's files (save states, memory cards, settings) go to `%APPDATA%\Amplitude_Recomp`, or to a folder named
+`user` next to `amplitude.exe` when there is one (portable), or to `PS2X_USER_DIR`.
 
 Builds and timed runs take the shared benchmark lock alone (`scripts/bench_run.sh --alone`); game runs take one slot.
 

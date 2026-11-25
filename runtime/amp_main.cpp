@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <filesystem>
 #include <string>
 #include <vector>
 #ifdef AMP_WITH_WINDOW
@@ -24,6 +25,24 @@
 
 int main(int argc, char **argv)
 {
+#ifdef AMP_WITH_WINDOW
+    // Portable: a folder named "user" next to the executable holds the player's files (save states, memory cards,
+    // settings) instead of %APPDATA%\Amplitude_Recomp, unless PS2X_USER_DIR names one. Set before anything asks
+    // bozo::app::userDirectory(), which keeps the first answer.
+    if (const char *forced = std::getenv("PS2X_USER_DIR"); !forced || !*forced)
+    {
+        std::error_code ec;
+        const std::filesystem::path portable = bozo::app::executableDirectory() / "user";
+        if (std::filesystem::is_directory(portable, ec))
+        {
+#ifdef _WIN32
+            _putenv_s("PS2X_USER_DIR", portable.string().c_str());
+#else
+            setenv("PS2X_USER_DIR", portable.string().c_str(), 1);
+#endif
+        }
+    }
+#endif
     bozo::host::FreeOptions options;
     options.framePeriodCycles = 294912000 / 60; // NTSC (VMODE = NTSC in SYSTEM.CNF)
     bool window = false;
