@@ -109,10 +109,11 @@ namespace amp
             g_mixer = sound->advanceTo(cycle);
             // softFX writes its mix (the song select's preview loops) into core 0's sound data input by ordinary
             // transfers, never starting a block transfer: the input is read from sound memory, as the SPU2 does.
-            if (static bool memoryInput = false; g_mixer && !memoryInput)
+            static bozo::audio::Mixer *configured = nullptr; // (each mixer the modules hand back, once)
+            if (g_mixer && g_mixer != configured)
             {
                 g_mixer->setMemoryInput(true);
-                memoryInput = true;
+                configured = g_mixer;
             }
             return g_mixer;
         };
@@ -172,7 +173,18 @@ namespace amp
                       [](bozo::state::Archive &a)
                       {
                           sound->serialize(a);
-                          if (a.loading())
+                          // The port's own state, nested (a state written before it has none: only the boot's VU
+                          // microcode is put back then, and such a state does not run on).
+                          if (!a.loading() || a.sectionLeft() > 0)
+                          {
+                              a.begin("port");
+                              serializeRender(a);
+                              serializeVu(a);
+                              serializeGs(a);
+                              serializeIpu(a);
+                              a.end();
+                          }
+                          else
                               vif::restoreBootMicrocode();
                       },
                       [] { return sound ? sound->unsaveable() : std::string(); }});

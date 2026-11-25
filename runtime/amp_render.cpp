@@ -402,6 +402,16 @@ namespace amp
         vif::report();
         reportIpu();
     }
+
+    // The save state's part of the renderer: the port's DMA register file and the MFIFO ring (set once at boot: a load
+    // without them left the ring undrained and the game waiting for ever).
+    void serializeRender(bozo::state::Archive &a)
+    {
+        using namespace bozo::state;
+        for (Channel &c : g_ch)
+            fields(a, c.chcr, c.madr, c.qwc, c.tadr, c.sadr);
+        fields(a, g_ctrl, g_rbor, g_rbsr, g_vif1Tadr, g_vif1Mfifo);
+    }
 } // namespace amp
 
 namespace amp::path3

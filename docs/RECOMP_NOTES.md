@@ -185,8 +185,14 @@ interpreter runs them all).
   output IRQ, with no block transfer. The SPU2 plays that area at the output position whatever writes it; the engine's
   mixer played the input only for a block transfer. BozoEngine's `Mixer::setMemoryInput` (branch
   `amp/spu2-memory-input`, opt-in) reads it from sound memory; `runtime/amp_audio.cpp` turns it on.
-- **Save states** do not hold the port's renderer and DMA state yet: a state loads, then the game waits for ever. The
-  boot's VU microcode is put back after a load (`vif::restoreBootMicrocode`), which a working load will need.
+- **Save states.** A state held the engine's parts and the sound modules but not the port's: its DMA register file
+  and MFIFO ring (set once at boot), VIF and the VUs (the microcode is sent once at boot), the GS registers and local
+  memory (textures uploaded once), the IPU streams. A loaded state ran on into a renderer that never drained its ring:
+  the game waited for ever. They are now nested in the `amp` section (`serializeRender`, `serializeVu`, `serializeGs`,
+  `serializeIpu`); what is derived from them (decoded textures, render-to-texture images, the frame's batches) starts
+  again after a load. Checked in a song and in the FreQmaker: the game runs on, the picture and the sound as in an
+  unbroken run. A state written before this has none of it: it loads (the boot's microcode is put back from the EE's
+  RAM) but does not run on.
 
 ## IPU pictures: the animated textures
 
@@ -273,7 +279,7 @@ the stream fix; not compared with the console yet).
 
 ## Next steps
 
-1. Save states (the port's renderer and DMA state); the white blotches; the title's sound against the console.
+1. The white blotches; the title's sound against the console.
 2. Timing: input and sound against the beat, compared with the console.
 3. Native draws: the renderer answered at its own functions instead of through VIF1 / VU1 / GIF.
 4. Upstream to BozoEngine: the IRX translator fix and the mixer's output IRQ are merged; still a native `sceIoctl`

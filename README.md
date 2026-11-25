@@ -50,7 +50,7 @@ with its sound, the track's surface and the HUD's monitor drawn by render-to-tex
 | Full speed: the VU1 programs compiled to C++ (60 frames a second with room to spare) | ✅ |
 | White blotches on the title and on highlighted labels | 🔧 |
 | Input and sound timing checked against the console | ⏳ |
-| Save states (the port's renderer state is not saved yet) | ⏳ |
+| Save states (in the window: save and load slots) | ✅ |
 | Memory-card saves, multitap (four players) | ⏳ |
 | Native draws (the renderer answered at its own functions, not through VIF1 / GS packets) | ⏳ |
 | Linux build | ⏳ |

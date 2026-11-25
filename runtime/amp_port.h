@@ -23,8 +23,14 @@ namespace amp
     bozo::libs::Libraries *libraries();
     // The IOP sound modules (runtime/amp_audio.cpp): module loads, SIF transfers and the mixer.
     void installAudio(bozo::libs::Libraries &libraries, uint8_t *eeRam);
-    // The port's save-state section (runtime/amp_audio.cpp): the sound modules' IOP host.
+    // The port's save-state section (runtime/amp_audio.cpp): the sound modules' IOP host, then the port's own
+    // state below (the renderer's DMA registers and MFIFO ring, VIF and the VUs, the GS registers and local memory,
+    // the IPU streams).
     void installState(bozo::state::Sections &sections);
+    void serializeRender(bozo::state::Archive &a); // runtime/amp_render.cpp
+    void serializeIpu(bozo::state::Archive &a);    // runtime/amp_ipu.cpp
+    void serializeGs(bozo::state::Archive &a);     // runtime/amp_gs_state.cpp
+    void serializeVu(bozo::state::Archive &a);     // runtime/amp_vu1.cpp
     // AMP_TRACE_SOUND=<n> / AMP_TRACE_RPC=1: the mixer and the drivers' RPC calls (runtime/amp_audio.cpp).
     void traceSound(uint64_t frame);
 

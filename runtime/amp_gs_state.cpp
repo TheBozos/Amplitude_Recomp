@@ -383,19 +383,19 @@ namespace amp::gs
             return generation;
         }
 
+        struct Recent
+        {
+            uint64_t tex0 = ~0ull, texa = ~0ull, changes = ~0ull;
+            uint32_t generation = 0;
+            std::shared_ptr<Texture> texture;
+        };
+        std::array<Recent, 64> g_recent; // texture()'s: the textures used lately
         const std::shared_ptr<Texture> &texture(uint64_t tex0)
         {
             // The textures used lately (a 3D frame alternates between a few): one is still good while nothing was
             // written since, or nothing in its pages (the generation over them the same: the uploads between draws go
             // elsewhere, mostly).
-            struct Recent
-            {
-                uint64_t tex0 = ~0ull, texa = ~0ull, changes = ~0ull;
-                uint32_t generation = 0;
-                std::shared_ptr<Texture> texture;
-            };
-            static std::array<Recent, 64> recent;
-            Recent &r = recent[(tex0 ^ (tex0 >> 14) ^ (tex0 >> 37) ^ g_s.texa) & 63u];
+            Recent &r = g_recent[(tex0 ^ (tex0 >> 14) ^ (tex0 >> 37) ^ g_s.texa) & 63u];
             if (r.texture && r.tex0 == tex0 && r.texa == g_s.texa)
             {
                 if (r.changes == g_changes)
@@ -1697,3 +1697,32 @@ namespace amp::gs
                     (unsigned long long)g_uploads, (unsigned long long)g_blocksChanged, (unsigned long long)g_blocksCompared, (unsigned long long)g_decodes);
     }
 } // namespace amp::gs
+
+namespace amp
+{
+    // The save state's part of the GS: its registers, its local memory (textures uploaded once stay there) and the page
+    // generations, an image transfer half done, the primitive's vertices so far, the frame buffers displayed. What is
+    // derived from them (decoded textures, render-to-texture images, the frame's batches) starts again after a load.
+    void serializeGs(bozo::state::Archive &a)
+    {
+        using namespace bozo::state;
+        using namespace gs;
+        a.raw(g_mem.data(), g_mem.size() * sizeof(uint32_t));
+        Image &im = g_image;
+        fields(a, g_pageGeneration, g_generation, im.psm, im.bp, im.bw, im.x0, im.y0, im.w, im.h, im.x, im.y, im.active,
+               im.carry, im.carryBits, im.data, im.need, g_frameBuffers, g_displayFbp);
+        pod(a, g_s);
+        pod(a, g_queue);
+        if (a.loading())
+        {
+            g_textures.clear();
+            g_byContent.clear();
+            g_recent.fill(Recent{});
+            ++g_changes;
+            g_offscreen.clear();
+            g_made = Made{};
+            for (auto &[f, list] : g_frameDraws)
+                list.clear();
+        }
+    }
+} // namespace amp

@@ -1409,4 +1409,29 @@ namespace amp
             std::printf("\n");
         }
     }
+
+    // The save state's part of VIF and the VUs: VU1's registers, data and code memories, VU0's code memory (its
+    // registers are the EE's COP2 state, its data memory the runtime's), both VIFs' registers and a command's data
+    // half gathered.
+    void serializeVu(bozo::state::Archive &a)
+    {
+        using namespace bozo::state;
+        Vu1 &v = g_vu;
+        for (vu::Vec &r : v.vf)
+            pod(a, r);
+        pod(a, v.acc);
+        fields(a, v.vi, v.q, v.p, v.i, v.r, v.clip, v.status, v.mac, v.macHistory, v.macAt, v.pendingQ, v.qDelay, v.mem,
+               v.micro, v.tpc, g_vu0.micro);
+        for (Vif *f : {&g_vif, &g_vif0})
+            fields(a, f->cl, f->wl, f->mode, f->mask, f->row, f->col, f->base, f->offset, f->tops, f->top, f->itops, f->itop,
+                   f->dbf, f->code, f->data, f->need);
+        if (a.loading())
+        {
+            for (uint32_t &s : vu::g_segmentVersion)
+                ++s; // the compiled images checked again against the code loaded
+            g_vif.from = g_vif0.from = nullptr;
+            g_cur = &g_vu;
+            g_cv = &g_vif;
+        }
+    }
 } // namespace amp

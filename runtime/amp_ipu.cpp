@@ -311,4 +311,55 @@ namespace amp
         std::printf("[amp:ipu] %zu streams, %llu pictures decoded, %llu failed\n", g_streams.size(),
                     (unsigned long long)g_decoded, (unsigned long long)g_failed);
     }
+
+    // The save state's part of the IPU pictures: the streams read so far (by their to-IPU chain), where each is, which
+    // DMA state areas hold which, the one being decoded and channel 3's registers.
+    void serializeIpu(bozo::state::Archive &a)
+    {
+        using namespace bozo::state;
+        const uint64_t n = count(a, g_streams.size());
+        if (a.loading())
+        {
+            g_streams.clear();
+            for (uint64_t i = 0; i < n; ++i)
+            {
+                auto s = std::make_unique<Stream>();
+                uint64_t pos = 0, picture = 0;
+                fields(a, s->chain, s->bytes, s->width, s->height, pos, picture, s->pictures);
+                s->pos = pos;
+                s->picture = picture;
+                const uint32_t chain = s->chain;
+                g_streams[chain] = std::move(s);
+            }
+        }
+        else
+            for (auto &[chain, s] : g_streams)
+            {
+                uint64_t pos = s->pos, picture = s->picture;
+                fields(a, s->chain, s->bytes, s->width, s->height, pos, picture, s->pictures);
+            }
+        std::map<uint32_t, uint32_t> saved; // DMA state area -> stream chain
+        uint32_t current = 0;
+        bool hasCurrent = g_current != nullptr;
+        if (!a.loading())
+        {
+            for (const auto &[area, s] : g_saved)
+                saved[area] = s->chain;
+            if (g_current)
+                current = g_current->chain;
+        }
+        fields(a, saved, current, hasCurrent, g_d3madr, g_d3qwc);
+        if (a.loading())
+        {
+            auto find = [](uint32_t chain) -> Stream * {
+                const auto it = g_streams.find(chain);
+                return it == g_streams.end() ? nullptr : it->second.get();
+            };
+            g_saved.clear();
+            for (const auto &[area, chain] : saved)
+                if (Stream *s = find(chain))
+                    g_saved[area] = s;
+            g_current = hasCurrent ? find(current) : nullptr;
+        }
+    }
 } // namespace amp
