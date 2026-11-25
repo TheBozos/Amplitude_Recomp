@@ -10,7 +10,7 @@ Built on [BozoEngine](https://github.com/TheBozos/BozoEngine), The Bozos' own to
 ![Platform](https://img.shields.io/badge/platform-Windows%20(Linux%20later)-1b8cff)
 ![Compiler](https://img.shields.io/badge/compiler-GCC%20%7C%20Clang-1b8cff)
 ![Based on](https://img.shields.io/badge/based%20on-BozoEngine-17a35b)
-![Status](https://img.shields.io/badge/status-bring--up-d01f3c)
+![Status](https://img.shields.io/badge/status-songs%20play-e0a100)
 
 </div>
 
@@ -25,9 +25,11 @@ Built on [BozoEngine](https://github.com/TheBozos/BozoEngine), The Bozos' own to
 
 ## Status
 
-**Bring-up: the main menu.** The game boots through the memory-card check, the publisher and Harmonix logos and the
-intro movie to the title screen and, with Start, the main menu and the Solo menu, drawn natively at about 52 frames a
-second (every VU1 program still interpreted). No song has been played yet.
+**A song plays from start to end.** The game boots through the logos and the intro movie to the title screen, the
+menus, the FreQmaker, the arena and song selection, and plays a whole song ("Boom", P.O.D. vs. The Crystal Method, in
+Neotropolis) with its music streamed from the disc: the gems are hit, the tracks turn on, the score climbs and the
+results screen follows. Drawn natively at about 52 frames a second (every VU1 program still interpreted). The track's
+surface is still drawn as coloured noise.
 
 | Milestone | |
 |---|:---:|
@@ -40,8 +42,10 @@ second (every VU1 program still interpreted). No song has been played yet.
 | Title screen: the 3D city fly-over | ✅ |
 | Main menu and Solo menu, with the animated IPU monitors | ✅ |
 | Harmonix's sound modules (SYNTH_S, SOFTFX_S) compiled and running on the native mixer | ✅ |
-| Movie sound (noise for now), white blotches on the title's scene | 🔧 |
-| A complete song playable, beat-matching in time | ⏳ |
+| FreQmaker, arena and song selection, the training with its narration | ✅ |
+| A complete song: streamed music, gems, scoring, energy, results screen | ✅ |
+| The track's surface texture (coloured noise), white blotches, movie sound (noise) | 🔧 |
+| Input and sound timing checked against the console | ⏳ |
 | Memory-card saves, multitap (four players) | ⏳ |
 | Full speed (compiled VU1 programs, then native draws) | ⏳ |
 | Linux build | ⏳ |
@@ -60,7 +64,9 @@ Captured from the current build at 960x720.
 |---|---|---|
 | ![The memory-card check](docs/screenshots/memory-card-check.jpg) | ![Sony Computer Entertainment America presents](docs/screenshots/scea-presents.jpg) | ![The Harmonix logo](docs/screenshots/harmonix-logo.jpg) |
 | ![The intro movie](docs/screenshots/intro-movie.jpg) | ![The title screen's fly-over](docs/screenshots/title-flyover.jpg) | ![The title screen](docs/screenshots/title.jpg) |
-| ![The main menu](docs/screenshots/main-menu.jpg) | ![Solo: select your FreQ](docs/screenshots/select-freq.jpg) | |
+| ![The main menu](docs/screenshots/main-menu.jpg) | ![Solo: select your FreQ](docs/screenshots/select-freq.jpg) | ![Select an arena](docs/screenshots/select-arena.jpg) |
+| ![Select a song](docs/screenshots/select-song.jpg) | ![The warp into the song](docs/screenshots/song-intro.jpg) | ![Boom, in Neotropolis](docs/screenshots/gameplay.jpg) |
+| ![Tracks turned on, the score climbing](docs/screenshots/gameplay-score.jpg) | ![Player stats after the song](docs/screenshots/player-stats.jpg) | |
 
 ## Goal
 
@@ -104,7 +110,7 @@ pacman -S --needed mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,pkgconf,ffmpeg,libarch
 
 ## Build and run
 
-The game reaches its main menu. This is the developer workflow as it stands.
+A song plays from start to end. This is the developer workflow as it stands.
 
 ```bash
 git clone --recurse-submodules https://github.com/TheBozos/Amplitude_Recomp.git
@@ -118,7 +124,9 @@ PS2X_PAD_NO_HOST=1 scripts/bench_run.sh 10 "boot" scripts/run.sh --frames 600
 `scripts/run.sh` runs `amp-headless`; `AMP_WINDOW_RUN=1` runs the `amplitude` window instead (`--hidden`, `--mute`
 for unattended runs; `AMP_CAPTURE_FRAMES=first:last:step` with `PS2X_CAPTURE_WINDOW_DIR` saves pictures). The intro
 lasts about 6,200 frames; `--pad-script` takes `frame:BUTTON/frames` entries (e.g. `6500:START/8` at the title). The
-runner prints where the game stops and what is not native yet.
+runner prints where the game stops and what is not native yet. Play-test switches (`AMP_UNLOCK_ALL`,
+`AMP_INFINITE_ENERGY`, `AMP_AUTOPILOT`) and a pad script that reaches a song are in
+[docs/RECOMP_NOTES.md](docs/RECOMP_NOTES.md#gameplay).
 
 Builds and timed runs take the shared benchmark lock alone (`scripts/bench_run.sh --alone`); game runs take one slot.
 

@@ -7,6 +7,10 @@
 #include "amp_port.h"
 #include "bozo/ee/dispatcher.h"
 #include <cstring>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+#include "bozo/libs/guest.h"
 
 namespace amp
 {
@@ -30,6 +34,41 @@ namespace amp
             ctx->pc = ctx->r[31].uw[0];
         }
 
+        // The file system's calls (sceOpen, sceGetstat, sceCdSearchFile): the engine's own answer; AMP_TRACE_FILES=1
+        // prints each one's path and result.
+        template <const char *Name> void traceFile(uint8_t *, R5900Context *ctx, Runtime *rt)
+        {
+            bozo::libs::Libraries *l = libraries();
+            const bozo::libs::Function *f = l ? l->find(Name) : nullptr;
+            bozo::libs::Guest g(*rt, ctx);
+            const bool search = std::strcmp(Name, "sceCdSearchFile") == 0;
+            const std::string path = g.string(search ? g.arg(1) : g.arg(0));
+            const uint32_t ra = ctx->r[31].uw[0];
+            if (f)
+                f->handler(*l, g);
+            static const bool on = std::getenv("AMP_TRACE_FILES") != nullptr;
+            if (on)
+                std::printf("[amp:file] %s(\"%s\"%s) = %d (from %x)\n", Name, path.c_str(),
+                        search ? "" : (std::string(", ") + std::to_string(g.arg(1))).c_str(), ctx->r[2].sw[0], ra);
+            ctx->pc = ra;
+        }
+        constexpr char kSceOpen[] = "sceOpen", kSceGetstat[] = "sceGetstat", kSceCdSearchFile[] = "sceCdSearchFile";
+
+        // sceCdRead(lbn, sectors, buffer, mode): the engine's answer; AMP_TRACE_FILES=1 prints the sectors read.
+        void traceCdRead(uint8_t *, R5900Context *ctx, Runtime *rt)
+        {
+            bozo::libs::Libraries *l = libraries();
+            const bozo::libs::Function *f = l ? l->find("sceCdRead") : nullptr;
+            bozo::libs::Guest g(*rt, ctx);
+            const uint32_t lbn = g.arg(0), n = g.arg(1), to = g.arg(2), ra = ctx->r[31].uw[0];
+            if (f)
+                f->handler(*l, g);
+            static const bool on = std::getenv("AMP_TRACE_FILES") != nullptr;
+            if (on)
+                std::printf("[amp:file] sceCdRead(lbn %u, %u sectors, to %x) = %d (from %x)\n", lbn, n, to, ctx->r[2].sw[0], ra);
+            ctx->pc = ra;
+        }
+
         void returnZero(uint8_t *, R5900Context *ctx, Runtime *)
         {
             ctx->r[2].ud[0] = 0;
@@ -48,6 +87,10 @@ namespace amp
         installRender(rt, r);
         installIpu(rt, r);
         r.registerFunction(0x31b0b8, ioctl); // sceIoctl
+        r.registerFunction(0x31a558, traceFile<kSceOpen>);
+        r.registerFunction(0x31b610, traceFile<kSceGetstat>);
+        r.registerFunction(0x314330, traceFile<kSceCdSearchFile>);
+        r.registerFunction(0x315088, traceCdRead); // sceCdRead
         // The USB keyboard (libusbkb, USBKB.IRX's RPC server 0x80000211) serves online chat only. The game's keyboard
         // init 0x28b148 (sceUsbKbInit 0x310618 binds the server in a loop that never ends without the module), its end
         // 0x28b1c8 and its per-frame poll 0x28b1f0 do nothing: no keyboard is ever connected.

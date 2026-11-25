@@ -183,20 +183,61 @@ data to them over SIF.
   `tools/native_irx/recompile.py` (branch `amp/irx-call-ends-function`, not merged yet).
 - The title screen plays real stereo sound (a WAV of it: correlated channels, a music-like spectrum); not compared with
   the console yet.
+- **The streams never refilled** (the tutorial's narration and the songs stopped after their first buffers; the game
+  then waited for the stream for ever). SOFTFX_S times its stream player with the SPU2's IRQ: it points a core's IRQ
+  address at the output write-back areas (IRQA `0x29f0` / `0x2ff0`, halfword `0x14f8` / `0x17f8`: core 0 and 1's
+  output areas, 512 samples each) and counts each time the output reaches it. The engine's mixer only raised the IRQ
+  on voice reads. Fixed in BozoEngine's `runtime/audio/mixer.cpp` (`Mixer::reachOutputIrq`: the IRQ is raised when the
+  output position, one sample per output frame, reaches an IRQ address inside `0x800..0x4000`).
+
+## Gameplay
+
+The data the songs need come from `GEN/MAIN.ARK` (version 2: five-word entries, offset, name index, directory index
+(`0xffffffff` for the root), size, 0; then the string table and its index) and the song streams `AUDIO/*.STR`, which
+the EE reads with `sceCdRead` and sends to SOFTFX_S over SIF (opcode `0x69` data, `0x6f` volume); SYNTH_S plays the
+MIDI parts (RPC batch command `0x70`, opcode `0x6e`).
+
+- The path: main menu, Solo, a FreQ (the FreQmaker's prefab, a name typed on the on-screen keyboard, saved to the
+  memory card), Game, the difficulty, the arena, the song. The arenas are locked by the game's progress
+  (`freq2_config`: Training and its first two programs always open; beating Basic Concepts Training opens Neotropolis
+  and Advanced Training). The game data object is `*0x440d44` (difficulty `+0x48`, mode `+0x54`, the unlock-all flag
+  `+0x8c`, the songs' data array `+0xa8`).
+- **Basic Concepts Training** plays with its streamed narration; the lanes' buttons (L1, R1, R2) hit the gems.
+- **"Boom" (P.O.D. vs. The Crystal Method, Neotropolis, Normal) plays from start to end**: the track, the gems, the
+  HUD (energy, score, multiplier), the arena's animated screens, the song's music from its stream, the "Energy low"
+  warning and Game Over without input, the end of the song and the PLAYER STATS screen. With the game's own autopilot
+  (below) the score climbs as the gems are played (30 at the end, 17 % of the tracks turned on).
+- The energy meter is a float at `+0x4bc` of the song's player object `*0x3af838` (15 full, Game Over at 0); the HUD
+  keeps an integer copy at `0x43b74c`.
+
+Play-test switches of the runner (`runtime/amp_main.cpp`), for unattended runs:
+
+| Variable | What |
+|---|---|
+| `AMP_UNLOCK_ALL=1` | the game's unlock-all flag: every arena and song open |
+| `AMP_INFINITE_ENERGY=1` | the energy meter held full: a whole song without input |
+| `AMP_AUTOPILOT=1` | the game's autopilot cheat (`+0x100` of `*0x435f14`, its debug toggle `0x110390`): the game plays the gems |
+| `AMP_UNPACED=1` | the window runs as fast as it can (captures) |
+| `AMP_DUMP_RAM_AT=<frame>,...` | RAM written to `build/ram_<frame>.bin` |
+| `AMP_WATCH=<address>,...` | a RAM word printed whenever it changes |
+| `AMP_TRACE_FILES=1`, `AMP_TRACE_RPC=1`, `AMP_TRACE_RPC_DUMP=<frame>` | file system calls, the drivers' RPC calls |
+
+A pad script that reaches "Boom" from boot (with `AMP_UNLOCK_ALL=1`; the arena list opens on Blastlands):
+`6470:START/6,6650:CROSS/6,6900:CROSS/6,7000:CROSS/6,7100:CROSS/6,7300:CROSS/6,7500:CROSS/6,7800:CROSS/6,9000:DOWN/6,9150:DOWN/6,9400:CROSS/6,9800:CROSS/6,10200:CROSS/6`.
+The song plays from about frame 10,800 to 22,800.
 
 ## Where it stands
 
-The game boots through the memory-card check, "Sony Computer Entertainment America presents", the Harmonix logo and the
-intro movie to the **title screen** (its 3D fly-over of the city) and, with Start, the **main menu** (Solo,
-Multiplayer, Online, Options) and the Solo menu's FreQ selection, with the animated IPU monitors. About 52 frames a
-second in the window with every VU1 program interpreted. Seen so far: white blotches over parts of the title's scene
-(a sprite or blend case of the translator), the intro's noisy sound.
+The game boots through the logos and the intro movie to the title screen, the menus, the FreQmaker, the arena and song
+selection, and **a whole song, scored, to the results screen**. About 52 frames a second in the window with every VU1
+program interpreted. Seen so far: the track's surface drawn as coloured noise (a texture or CLUT case of the
+translator), white blotches on the title's scene and over highlighted menu labels, the intro's noisy sound.
 
 ## Next steps
 
-1. Gameplay: a song (the track, the gems, the multitrack streams through `sceCdSt*` and SYNTH_S), and its timing.
-2. The intro movie's sound; the white blotches on the title.
+1. The track's surface texture; the white blotches; the intro movie's sound.
+2. Timing: input and sound against the beat, compared with the console.
 3. Speed: compile the VU1 programs (Shinobido's `tools/shino_vu1_recomp.py`), then answer the renderer's draws at its
    own functions instead of through VIF1/VU1/GIF.
-4. Upstream to BozoEngine: the IRX translator fix; a native `sceIoctl` status poll and `sceSifInitCmd`; the libmpeg
-   defaults (TMB's reference layout, the heap after `.bss`) that break other games.
+4. Upstream to BozoEngine: the IRX translator fix, the mixer's output IRQ; a native `sceIoctl` status poll and
+   `sceSifInitCmd`; the libmpeg defaults (TMB's reference layout, the heap after `.bss`) that break other games.

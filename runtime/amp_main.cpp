@@ -138,9 +138,71 @@ int main(int argc, char **argv)
     }
 
     bozo::app::FramePacer pacer;
-    pacer.setPaced(window);
+    // AMP_UNPACED=1: the window as fast as the PC goes (with --no-vsync): unattended captures reach the menus in
+    // seconds instead of the intro's two minutes.
+    pacer.setPaced(window && !std::getenv("AMP_UNPACED"));
     host.onFrame = [&](uint64_t f, const R5900Context *ctx)
     {
+        // AMP_DUMP_RAM_AT=<frame>,<frame>...: the EE's RAM at each of those frames' end, as build/ram_<frame>.bin (memory
+        // searches: the cheats' fields).
+        if (static const char *at = std::getenv("AMP_DUMP_RAM_AT"); at)
+            for (const char *p = at; *p;)
+            {
+                char *next = nullptr;
+                if (std::strtoull(p, &next, 10) == f)
+                    if (FILE *file = std::fopen(("build/ram_" + std::to_string(f) + ".bin").c_str(), "wb"))
+                    {
+                        std::fwrite(d.runtime().memory.ram(), 1, 0x2000000u, file);
+                        std::fclose(file);
+                    }
+                if (!next || next == p)
+                    break;
+                p = *next ? next + 1 : next;
+            }
+        // AMP_INFINITE_ENERGY=1: the energy meter kept full while a song runs (a float, 15 when full, Game Over at 0, at
+        // +0x4bc of the song's player object *0x3af838; the HUD's copy, 0x43b74c, follows it; found by memory searches
+        // during a song with no input). For play tests: a whole song without input.
+        if (static const bool infinite = std::getenv("AMP_INFINITE_ENERGY") != nullptr; infinite)
+        {
+            uint8_t *ram = d.runtime().memory.ram();
+            uint32_t player;
+            std::memcpy(&player, ram + 0x3af838u, 4);
+            if (player >= 0x100000u && player < 0x1FFF000u)
+            {
+                float energy;
+                std::memcpy(&energy, ram + player + 0x4bcu, 4);
+                if (energy > 0.0f && energy < 15.0f)
+                {
+                    const float full = 15.0f;
+                    std::memcpy(ram + player + 0x4bcu, &full, 4);
+                }
+            }
+        }
+        // AMP_UNLOCK_ALL=1: the game's own unlock-all flag (+0x8c of the game data at *0x440d44, which the arena list
+        // 0x26dd40 checks before the FreQ's progress): every arena and song open without beating the training first
+        // (the game unlocks Neotropolis when Basic Concepts Training is beaten). For play tests.
+        if (static const bool unlockAll = std::getenv("AMP_UNLOCK_ALL") != nullptr; unlockAll)
+        {
+            uint32_t data;
+            std::memcpy(&data, d.runtime().memory.ram() + 0x440d44u, 4);
+            if (data >= 0x100000u && data < 0x2000000u)
+            {
+                const uint32_t one = 1;
+                std::memcpy(d.runtime().memory.ram() + data + 0x8cu, &one, 4);
+            }
+        }
+        // AMP_AUTOPILOT=1: the game's own autopilot cheat (its debug toggle 0x110390 flips +0x100 of the object at
+        // *0x435f14 and prints "CHEAT: autopilot mode"): the game plays the gems itself. For play tests of a whole song.
+        if (static const bool autopilot = std::getenv("AMP_AUTOPILOT") != nullptr; autopilot)
+        {
+            uint32_t cheats;
+            std::memcpy(&cheats, d.runtime().memory.ram() + 0x435f14u, 4);
+            if (cheats >= 0x100000u && cheats < 0x2000000u)
+            {
+                const uint32_t one = 1;
+                std::memcpy(d.runtime().memory.ram() + cheats + 0x100u, &one, 4);
+            }
+        }
         // AMP_WATCH=<address>[,<address>...]: a word of RAM printed at each frame end where it changed (finding what
         // overwrites a structure).
         if (static const char *watch = std::getenv("AMP_WATCH"); watch)

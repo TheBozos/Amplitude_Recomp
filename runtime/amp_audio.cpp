@@ -41,15 +41,20 @@ namespace amp
                             empty = g.read32(r.send + i) == 0;
                         if (!empty && r.sendBytes)
                             ++g_rpcCalls[{service, r.command | 1u}];
-                        // AMP_TRACE_RPC_DUMP=<frame>: each call's send buffer from that frame on (16 calls)
+                        // AMP_TRACE_RPC_DUMP=<frame>: each call's send buffer from that frame on (AMP_TRACE_RPC_MAX calls,
+                        // 16 by default); AMP_TRACE_RPC_SKIP=<hex>: not the calls whose first word is that (0x6e: MIDI).
                         static const char *dump = std::getenv("AMP_TRACE_RPC_DUMP");
                         static int dumped = 0;
+                        static const int most = std::getenv("AMP_TRACE_RPC_MAX") ? std::atoi(std::getenv("AMP_TRACE_RPC_MAX")) : 16;
+                        static const char *skip = std::getenv("AMP_TRACE_RPC_SKIP");
                         static const char *only = std::getenv("AMP_TRACE_RPC_SERVICE"); // one service's calls alone
-                        if (dump && l.framesEnded >= std::strtoull(dump, nullptr, 10) && dumped < 16 &&
-                            (!only || std::strtoul(only, nullptr, 16) == service))
+                        if (dump && l.framesEnded >= std::strtoull(dump, nullptr, 10) && dumped < most &&
+                            (!only || std::strtoul(only, nullptr, 16) == service) &&
+                            !(skip && r.sendBytes >= 4 && g.read32(r.send) == std::strtoul(skip, nullptr, 16)))
                         {
                             ++dumped;
-                            std::printf("[amp:rpc] %x/%x send %x (%u bytes) receive %x (%u):", service, r.command, r.send,
+                            std::printf("[amp:rpc] frame %llu %x/%x send %x (%u bytes) receive %x (%u):",
+                                        (unsigned long long)l.framesEnded, service, r.command, r.send,
                                         r.sendBytes, r.receive, r.receiveBytes);
                             for (uint32_t i = 0; i < r.sendBytes && i < 512; i += 4)
                                 std::printf(" %08x", g.read32(r.send + i));
