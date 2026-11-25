@@ -1,2 +1,52 @@
-# Names read by hand from the code (BozoEngine docs/specs/symbol-map.md): "name 0xADDR  # evidence".
-# Empty so far: the first match ran on the references alone.
+# Names found by reading SCUS_972.58's code, for bozo_symbolmap.py --reviewed (BozoEngine docs/specs/symbol-map.md).
+# One "name 0xADDR # evidence" line each. The map is made with scripts/symbols.sh <reference ELFs>.
+# RPC pairs (server/function) come from tools/amp_rpc_names.py against SCUS_971.11, SCUS_971.01 and SLUS_200.18.
+InitSys 0x31c7c0 # crt0 (entry 0x100010) calls it right after its two syscalls and before FlushCache and main (0x100b50); it calls InitThread (0x317b98) among the SDK's inits, as Shinobido's InitSys does
+sceSifInitRpc 0x3192c8 # DI, a once-only flag (0x3c47cc), sceSifInitCmd (0x318c28), then the RPC buffers at 0x533a80..0x535280; 14 callers, sceCdSearchFile, sceMcInit and sceMtapInit among them; the matcher's only candidate
+sceSifSyncIop 0x31c430 # sceSifGetReg(4) & 0x40000 (SIF_REG_SMFLAG's reset-done bit), returns 1 when set, else 0: libsif's sceSifSyncIop (Shinobido 0x2cf0c0)
+sceSifRebootIop 0x31c468 # takes the IOPRP image path, refuses one longer than 0x50 with scePrintf, right after sceSifSyncIop; its only caller 0x28c7c8 also calls sceSifSyncIop: libsif's sceSifRebootIop
+sceSifLoadModule 0x31c2a8 # _sceSifLoadModule (0x31c080, the loadfile client bound by _lf_bind to 0x80000006) with a3 = its own stack slot and t0 = 0: sceSifLoadModule(name, args_len, args); called by the game's module loader 0x28a298
+sceMcInit 0x312f60 # mcserv 0x80000400, function 0xfe: the pair of sceMcInit in the references; creates the library's semaphores
+sceMcOpen 0x313160 # mcserv 0x80000400, function 0x2
+sceMcMkdir 0x313288 # sceMcOpen (0x313160) with a3 = 0x40 (the directory flag), the function kept as 0xb: libmc sceMcMkdir
+sceMcClose 0x3132c0 # mcserv 0x80000400, function 0x3
+sceMcSeek 0x313378 # mcserv 0x80000400, function 0x4
+sceMcRead 0x3134e0 # mcserv 0x80000400, function 0x5
+sceMcWrite 0x3135f8 # mcserv 0x80000400, function 0x6
+sceMcSync 0x3137e0 # (mode, int *cmd, int *result): -1 with no operation pending (0x3c2b40), else sceSifCheckStatRpc on the library's client (0x52f7c0) and PollSema/SignalSema: libmc sceMcSync; called by the game's card code 0x28b5c0
+sceMcGetInfo 0x313918 # mcserv 0x80000400, function 0x1
+sceMcGetDir 0x313aa0 # mcserv 0x80000400, function 0xd
+sceMcFormat 0x313bf0 # mcserv 0x80000400, function 0x10
+sceMcDelete 0x313cc0 # mcserv 0x80000400, function 0xf
+sceMcUnformat 0x313dd8 # mcserv 0x80000400, function 0x11
+sceCdSearchFile 0x314330 # the client bound to 0x80000597 with function 0: the pair of sceCdSearchFile in the references
+sceCdMmode 0x314fb8 # takes the S-command lock with 0x22 (0x314980), stores its argument (0x3c41c0) and calls the S-command server 0x80000593: libcdvd sceCdMmode (Shinobido 0x2d3220, S-command 0x22)
+sceCdRead 0x315088 # the N-command server 0x80000595 with function 0x1: the pair of sceCdRead in the references
+sceCdStInit 0x315638 # libcdvd's stream client 0x315878 (N-command 0x80000595, function 9: sceCdStream) with mode 5 (init): sceCdStInit(bufmax, bankmax, buffer)
+sceCdStStart 0x315668 # sceCdStream (0x315878) with mode 1 (start), its second argument passed as t0: sceCdStStart(lbn, mode)
+sceCdStStop 0x3156b0 # sceCdStream (0x315878) with mode 3 (stop) and no arguments: sceCdStStop()
+sceCdStRead 0x3156e8 # sceCdStream (0x315878) with mode 2 (read) twice, sceCdDelayThread between them (the blocking mode): sceCdStRead(sectors, buffer, mode, error)
+sceFsInit 0x31a288 # binds the fileio server 0x80000001 (function 0xff): the pair of sceFsInit in the references
+sceOpen 0x31a558 # fileio 0x80000001, function 0 (open)
+sceClose 0x31a7e0 # fileio 0x80000001, function 1 (close)
+sceLseek 0x31a960 # fileio 0x80000001, function 4 (lseek)
+sceRead 0x31ab98 # fileio 0x80000001, function 2 (read)
+sceWrite 0x31adf8 # fileio 0x80000001, function 3 (write)
+sceIoctl 0x31b0b8 # fileio 0x80000001, function 5 (ioctl)
+sceGetstat 0x31b610 # fileio 0x80000001, function 0xc (getstat), as Shinobido's sceGetstat
+SyncDCache 0x317768 # DI when interrupts are on (mfc0 Status & 0x10000), _sceSDC (0x3176c0) on the range rounded to 64 bytes, then EI: libkernel's SyncDCache; 16 callers, scePadGetDmaStr among them
+InvalidDCache 0x317898 # the same frame as SyncDCache around _sceIDC (0x3177f0): libkernel's InvalidDCache
+DisableIntc 0x317920 # DI, _DisableIntc (the syscall stub 0x316c70), EI: SDK 2.6's interrupt-safe DisableIntc
+EnableIntc 0x317988 # DI, _EnableIntc (0x316c60), EI: SDK 2.6's EnableIntc
+DisableDmac 0x3179f0 # DI, _DisableDmac (0x316c90), EI: SDK 2.6's DisableDmac
+EnableDmac 0x317a58 # DI, _EnableDmac (0x316c80), EI: SDK 2.6's EnableDmac
+sceMpegInit 0x307f28 # 176 bytes (Shinobido's is 176): _alalcInit, the IPU reset 0x30efb0 (IPU_CTRL = 0x40000000) and memset; called once by the movie player 0x1aec48 before sceMpegCreate
+sceMpegCreate 0x307fd8 # the movie player 0x1aec48 calls it right after sceMpegInit, then sceMpegAddStrCallback twice and sceMpegAddCallback three times; it calls sceMpegReset (0x308260) as libmpeg does (528 bytes; Shinobido 568, TMB 572)
+sceMpegDelete 0x3081e8 # `jr ra; v0 = 1` (8 bytes, as TMB's and Shinobido's), right after sceMpegCreate as in libmpeg; called by the movie player
+sceMpegGetPicture 0x3081f8 # (mp, image, mb count): image & 0x0fffffff | 0x20000000 at +0xd8, the count at +0xe4, the RGB32 flag +0xb0 = 1, then the decode 0x308480: sceMpegGetPicture (SDK 3.0 keeps them at +0xec/+0xf8)
+sceMpegReset 0x308260 # clears the decoder state (+0, +4, +8, +0xac, +0x118 = 0, +0x80 = -1) and returns 1: libmpeg sceMpegReset; called by sceMpegCreate and the movie player
+sceGsResetPath 0x30ea90 # VIF1_FBRST = 1, VIF1_ERR = 2, VU1 reset through vi28 (ctc2 0x200, then a wait on bit 8), two qwords to the VIF1 FIFO (0x10005000) and GIF_CTRL = 1: libgraph's sceGsResetPath; the movie player 0x1aec48 and the renderer 0x210bb8 call it
+sceGsSyncPath 0x30eb30 # reads D1_CHCR/D2_CHCR STR (0x10009000, 0x1000a000), VIF1_STAT (0x10003c00) and GIF_STAT (0x10003020) into busy bits 1/2/4/8/0x10: libgraph's sceGsSyncPath; 7 callers, the renderer's among them
+sceGsResetGraph 0x30f1e8 # (mode, inter, omode, ffmode) as halfwords (sll/sra 16 of a0-a3); mode 0 writes the GS CSR (0x12001000) = 0x200 (reset) and fills the parameters from sceGsGetGParam: libgraph's sceGsResetGraph; called by the movie player 0x1aec48 and the renderer 0x210bb8
+sceGsGetGParam 0x30f378 # `lui v0, 0x3c; jr ra; addiu v0, 0x2a60` (16 bytes, Shinobido's is 16): the library's parameter block; sceGsResetGraph and sceGsSetDefDispEnv call it first
+sceGsSetDefDispEnv 0x30f438 # (disp, psm, w, h, dx, dy) as halfwords (sll/sra 16 of a1-t1), calls sceGsGetGParam for the mode; right before sceGsPutDispEnv (0x30f7b0) as in TMB and Shinobido

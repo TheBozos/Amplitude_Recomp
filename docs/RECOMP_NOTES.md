@@ -30,9 +30,10 @@ Onimusha_Recomp and Shinobido_WOTN_Recomp.
   | `.rodata` | `0x3d7180` | `0x5ddd8` |
   | `.sbss` / `.bss` | `0x435080` / `0x435c00` | `0xb50` / `0x113c98` |
 
-- **Code inside `.rodata`**: about `0x42df00`..`0x42e490` holds real code (it uses MMI instructions, e.g. `0x70e73c88`)
-  that the program calls with `jal`. bozo-recomp reports these as "call target outside every function"
-  (4 targets, 12 calls); they need a code range added (or a port-side handler) before the program can reach them.
+- **Code inside `.rodata`**: `0x42df00`..`0x42e860` holds four MMI routines (an IDCT: the constants `0x5a82`,
+  `0x539f`, `0x4546` are cosines in Q15, their coefficient tables just before) that the program calls with `jal`
+  (12 call sites, to `0x42df00`, `0x42e090`, `0x42e190`, `0x42e490`). `tools/amp_prepare.py` adds a code section for
+  the block, so bozo-recomp translates it like `.text`.
 - **No code overlays** in the main program. The network setup GUI is separate (`NETGUI/NTGUICD.ELF`,
   `NTGUIDVD.ELF`), only for online play.
 - Data: `GEN/MAIN.ARK` (564 MB), a Harmonix ARK archive, version 2, 4,526 entries, its table of contents at the
@@ -48,9 +49,11 @@ code alone:
 
 - **13,651 functions**, 14,687 table entries, 699,998 instructions, 86 files (92 MB of C++), in 1.5 s.
 - **0 untranslated instructions**; `--census` decodes every word of the code ranges.
-- 3 `jr` the analysis could not resolve (`0x102c18`, `0x1035f0`, `0x1037d8`, all early in `.text`: likely
-  switch tables to check by hand).
-- 12 calls to the 4 `.rodata` code targets above.
+- 3 `jr` the analysis could not resolve, `0x102c18`, `0x1035f0`, `0x1037d8`: libgcc's setjmp/longjmp exception
+  paths (`__sjthrow`, `__throw`, `__rethrow`) jumping to a landing pad. They go through the dispatcher, which is
+  what they need; a landing pad that is not an entry yet will show up as an unknown-target fault.
+- 12 calls to the 4 `.rodata` code targets above. With the prepared ELF (the added section) and the symbol map:
+  13,686 functions, no warning.
 
 ## Symbol map
 
@@ -62,17 +65,50 @@ functions from executables that keep their symbols, here Dark Cloud's `SCUS_971.
 - First pass, no reviewed names: **444 functions** named (exact 319, layout 85, calls 37, drift 2, rpc 1);
   **135 of the engine's 272** natively answered names.
 - Found: the kernel syscall stubs, `InitThread`, `sceCdInit`, `scePadInit`/`scePadInit2`/`scePadPortOpen`.
-- Missing or ambiguous: most of libmc (`sceMcInit`, `sceMcGetInfo`, `sceMcGetDir`, ...: their neighbours are laid out
-  differently in this link), `sceSifInitRpc`, `sceSifLoadModule`/`sceSifLoadModuleBuffer` (same-shape candidates),
-  `sceCdInitEeCB`. Next: name them by hand in `recomp/amp_symbols_reviewed.txt`, pairing each `sceSifCallRpc` caller
-  with its server id and function number (libmc `0x80000400`, libcdvd `0x80000592`/`0x80000597`, libpad
-  `0x80000100`), as Shinobido and TTA did.
+- Missing or ambiguous: most of libmc (their neighbours are laid out differently in this link), `sceSifInitRpc`,
+  `sceSifLoadModule` (same-shape candidates), the fileio client, libcdvd's stream functions.
+- **Reviewed** (`recomp/amp_symbols_reviewed.txt`, 39 names, each with its evidence): `tools/amp_rpc_names.py` pairs
+  every `sceSifCallRpc` caller with its server and function number and looks the pair up in the references (libmc
+  `0x80000400`, libcdvd `0x80000592`/`0x80000595`/`0x80000597`, fileio `0x80000001`); the rest by reading the code
+  (`tools/amp_disasm.py`, `tools/amp_callers.py`): `InitSys` (called by crt0 before `main` `0x100b50`),
+  `sceSifInitRpc`, `sceSifSyncIop`, `sceSifRebootIop`, `sceSifLoadModule`, `sceMcSync`, `sceMcMkdir`, `sceCdMmode`,
+  SDK 2.6's interrupt-safe `SyncDCache`/`InvalidDCache`/`EnableIntc`/`DisableIntc`/`EnableDmac`/`DisableDmac` (the
+  raw syscalls are `_EnableIntc` etc. in this SDK).
+- **libcdvd streaming is linked**: the client `0x315878` (N-command `0x80000595`, function 9: `sceCdStream`) is called
+  with mode 5, 1, 3 and 2 by `sceCdStInit`, `sceCdStStart`, `sceCdStStop` and `sceCdStRead`, very likely the songs'
+  multitrack streaming.
+- With them and the boot's names below: **493 functions**, **178 of the 272** engine names. libmpeg is linked too (`_PES_packet`, `_sliceA0`
+  near `0x308b18`/`0x30b758`): the movies.
+
+## Build
+
+`scripts/build_runtime.sh` (under `scripts/bench_run.sh --alone`): `tools/amp_prepare.py` adds the `.rodata` code
+section, `bozo-externals` turns the symbol map's library names into stubs (179) and the port's registered addresses into
+overrides, `bozo-recomp` writes 32 files (13,686 functions), then `amp-headless` and the `amplitude` window link
+against BozoEngine (`b7298d5`). `scripts/run.sh` runs the headless runner; set `PS2X_PAD_NO_HOST=1` in scripted runs.
+
+## Boot
+
+Each headless run stops at the next thing that is not native yet; each stop below was answered and the run moved on.
+
+| Stop | What it was | Answer |
+|---|---|---|
+| wait in the fileio client (`sceIoctl` `0x31b0b8`) | the game opens files with `O_NOWAIT` (0x8001) and polls `sceIoctl(fd, 1, &status)` until status is no longer 1 (busy): the file layer `0x1af6a0`, the reads `0x28f528`/`0x28f598`/`0x28f6b0` | port override: status 0 (the engine's file calls are done when they return). Candidate for BozoEngine's fileio |
+| bind loop in `0x310618` | libusbkb's `sceUsbKbInit`: it binds USBKB.IRX's server `0x80000211` until it appears | the game's keyboard init `0x28b148`, end `0x28b1c8` and per-frame poll `0x28b1f0` do nothing: the keyboard is for online chat only |
+| IPU_CMD write in `0x30efb0` | `sceIpuInit` (the IPU reset), from libmpeg's `sceMpegInit` and from the game's "Movie" class set-up `0x2163c0` | libmpeg named (`sceMpegInit` `0x307f28`, `sceMpegCreate`, `sceMpegDelete`, `sceMpegGetPicture`, `sceMpegReset`: native); `sceIpuInit` does nothing |
+| VIF1_FBRST write in `0x30ea90` | libgraph's `sceGsResetPath`, and `sceGsSyncPath` `0x30eb30` beside it | named: native |
+| GS CSR write in `0x30f1e8` | libgraph's `sceGsResetGraph`, `sceGsGetGParam` `0x30f378`, `sceGsSetDefDispEnv` `0x30f438` | named: native |
+
+**Where it stands:** the first frame ends (the movie player's vsync wait, `sceGsSyncV`). The run then stops at
+`0x21b248`, the game's own display set-up: it writes the GS privileged registers directly (`PMODE`, `SMODE2`,
+`DISPFB1/2`, `DISPLAY1/2`, `BGCOLOR`), called through a pointer. That is where the native drawing path starts.
 
 ## Next steps
 
-1. Finish the symbol map (the reviewed names above) and pass it to bozo-recomp/bozo-externals (`--symbols`).
-2. Code ranges for the `.rodata` routines; resolve the 3 open `jr`.
-3. `tools/amp_prepare.py`, `CMakeLists.txt` and a thin `runtime/` (main, port registry) on Onimusha's model, to
-   link `amp-headless` and boot to the first frame.
-4. Audio: Harmonix's SYNTH_S/SOFTFX_S IRX and the multitrack `.STR` streaming are the core of the game, and the
+1. Drawing: answer the display set-up `0x21b248` (the display registers the native renderer presents with), then
+   find the game's frame and draw submission (its DMA/VIF1 packets, VU1 microprograms in `.vutext`) and answer it
+   natively, as Shinobido and Onimusha did.
+2. The movie player `0x1aec48` (libmpeg native: needs FFmpeg, `BOZO_REQUIRE_FFMPEG`) and the game's own IPU
+   decoder ("Movie", `0x2163c0`).
+3. Audio: Harmonix's SYNTH_S/SOFTFX_S IRX and the multitrack `.STR` streaming are the core of the game, and the
    largest native piece to write.

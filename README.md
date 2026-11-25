@@ -25,15 +25,16 @@ Built on [BozoEngine](https://github.com/TheBozos/BozoEngine), The Bozos' own to
 
 ## Status
 
-**Bring-up.** The executable is mapped and recompiles completely; nothing runs yet.
+**Bring-up.** The whole executable recompiles and links into a native program. A headless run boots through the SDK set-up to the first frame and stops at the game's own display set-up; nothing is drawn yet.
 
 | Milestone | |
 |---|:---:|
 | Disc layout, executable sections and IOP modules mapped | ✅ |
 | Whole program recompiled by bozo-recomp: 13,651 functions, no untranslated instruction | ✅ |
-| Library symbol map for the stripped executable (444 names, 135 of the engine's natively answered calls) | 🔧 |
-| Port build (`amp-headless`, `amplitude`) linked against BozoEngine | ⏳ |
-| Boot to the first frame | ⏳ |
+| Library symbol map for the stripped executable (493 names, 178 of the engine's natively answered calls) | 🔧 |
+| Port build (`amp-headless`, `amplitude`) linked against BozoEngine | ✅ |
+| Boot to the first frame | ✅ |
+| Native display and drawing | 🔧 |
 | Menus, song select, `MAIN.ARK` data and native rendering | ⏳ |
 | Multitrack song streaming and Harmonix's synth on the native mixer | ⏳ |
 | A complete song playable, beat-matching in time | ⏳ |
@@ -80,14 +81,19 @@ pacman -S --needed mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,pkgconf,libarchive,pyt
 
 ## Build and run
 
-Nothing runs yet; this is the developer workflow as it stands.
+A headless run reaches the first frame; nothing is drawn yet. This is the developer workflow as it stands.
 
 ```bash
 git clone --recurse-submodules https://github.com/TheBozos/Amplitude_Recomp.git
 cd Amplitude_Recomp
 scripts/extract_iso.sh "/path/to/Amplitude (USA).iso"
-scripts/symbols.sh <reference ELFs with symbols>...
+scripts/symbols.sh <reference ELFs with symbols>...   # only when the symbol map changes
+scripts/bench_run.sh --alone 30 "build" scripts/build_runtime.sh
+PS2X_PAD_NO_HOST=1 scripts/bench_run.sh 10 "boot" scripts/run.sh --frames 600
 ```
+
+`scripts/run.sh` runs `amp-headless`; `AMP_WINDOW_RUN=1` runs the `amplitude` window instead (`--hidden`, `--mute`
+for unattended runs). The runner prints where the game stops and what is not native yet.
 
 Builds and timed runs take the shared benchmark lock alone (`scripts/bench_run.sh --alone`); game runs take one slot.
 
@@ -105,6 +111,8 @@ Builds and timed runs take the shared benchmark lock alone (`scripts/bench_run.s
 |---|---|
 | `BozoEngine/` | The engine (submodule): recompiler, runtime, native libraries, tools |
 | `recomp/` | The symbol map and the names read by hand |
+| `runtime/` | The runner (`amp_main.cpp`) and the port's native overrides (`amp_port.cpp`) |
+| `tools/` | `amp_prepare.py` (the ELF as bozo-recomp reads it), the naming aids (`amp_disasm.py`, `amp_callers.py`, `amp_rpc_names.py`) |
 | `runtime/app/` | The window build's icon, manifest and Windows resources |
 | `scripts/` | Disc extraction, symbol map, build, run, shared bench lock |
 | `docs/` | [RECOMP_NOTES.md](docs/RECOMP_NOTES.md), the branding (`docs/branding/make_logo.py`) |
