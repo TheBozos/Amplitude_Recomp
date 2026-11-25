@@ -203,6 +203,14 @@ interpreter runs them all).
   boot loads it (SELECT / EDIT Player 1). A played window game keeps its cards in `%APPDATA%\Amplitude_Recomp` (mc0,
   mc1); headless and scripted runs keep fresh cards in memory unless given `--card-dir` (`AMP_MEMORY_CARDS=1`: in
   memory for a played game too). Before, every session started on fresh cards: the FreQ and the progress were lost.
+- **Render images followed their buffers.** A buffer drawn in another format than its image had (FBP `0xe8`, a menu's
+  16-bit buffer, the training track's 32-bit layer later) kept its 16-bit image, its 32-bit textures were refused it
+  and read the local memory: the training track's surface was noise. The image follows the buffer's format and width
+  now. And the material cache keys on the set of images (`g_offscreenEpoch`): a material names its image, and one
+  reused across an image's change drew into the old one.
+- **Every arena and two players.** The first song of Neotropolis, Beat Factory, Metaclouds, Elektro Kore and
+  Blastlands plays and scores (autopilot), and Multiplayer > Game with two pads (`--pad-script2`) goes through the
+  FreQs of both players, difficulty, power-ups and arena to a two-player song.
 - **Save states.** A state held the engine's parts and the sound modules but not the port's: its DMA register file
   and MFIFO ring (set once at boot), VIF and the VUs (the microcode is sent once at boot), the GS registers and local
   memory (textures uploaded once), the IPU streams. A loaded state ran on into a renderer that never drained its ring:

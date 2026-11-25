@@ -609,6 +609,10 @@ namespace amp::gs
             float maxX = 0.0f, maxY = 0.0f; // the draws' extent
         };
         std::map<uint32_t, Offscreen> g_offscreen; // by FRAME.FBP
+        // Changed whenever an image is given or given up: the material cache (Made) keys on it, as a material names its
+        // image (target, source). Reused across a change, the draws into a buffer went on into its old image while
+        // its textures read the new one: the training track's surface was the old image's leftovers, noise again.
+        uint64_t g_offscreenEpoch = 0;
         uint32_t powerOfTwo(float v)
         {
             uint32_t p = 1;
@@ -632,7 +636,21 @@ namespace amp::gs
             if (g_flips < 4 || displayed(fbp))
                 return nullptr;
             if (auto it = g_offscreen.find(fbp); it != g_offscreen.end())
-                return &it->second;
+            {
+                // The buffer drawn in another format or width than its image had (a menu's 16-bit buffer, a song's
+                // 32-bit one at the same address): the image is made anew for it. Kept, the textures of the new format
+                // were refused it and read the local memory: the training track's surface was noise.
+                Offscreen &o = it->second;
+                const uint32_t psm = unsigned((frame >> 24) & 0x3Fu), width = std::max<uint32_t>((frame >> 16) & 0x3Fu, 1u) * 64u;
+                if (o.psm != psm || o.width < width)
+                {
+                    o.psm = psm;
+                    o.width = o.height = width;
+                    o.maxX = o.maxY = 0.0f;
+                    ++g_offscreenEpoch;
+                }
+                return &o;
+            }
             uint32_t used = 0;
             for (const auto &[f, o] : g_offscreen)
                 used |= 1u << o.target;
@@ -645,6 +663,7 @@ namespace amp::gs
                         oldest = it;
                 used &= ~(1u << oldest->second.target);
                 g_offscreen.erase(oldest);
+                ++g_offscreenEpoch;
             }
             for (uint8_t t = 1; t < Material::kAuxiliaryImages; ++t)
                 if (t != Material::kPreviousFrame && !(used & (1u << t)))
@@ -654,6 +673,7 @@ namespace amp::gs
                         std::printf("[amp:image] flip %llu: FBP %x (FBW %u, PSM %x) drawn into image %u\n",
                                     (unsigned long long)g_flips, fbp, unsigned((frame >> 16) & 0x3Fu),
                                     unsigned((frame >> 24) & 0x3Fu), unsigned(t));
+                    ++g_offscreenEpoch;
                     return &g_offscreen.emplace(fbp, Offscreen{t, width, width, unsigned((frame >> 24) & 0x3Fu)})
                                 .first->second;
                 }
@@ -685,6 +705,7 @@ namespace amp::gs
                 if (g_pageGeneration[p] > o.drawnGeneration)
                 {
                     g_offscreen.erase(it);
+                    ++g_offscreenEpoch;
                     return nullptr;
                 }
             o.width = std::max(o.width, 1u << ((c.tex0 >> 26) & 0xFu));
@@ -827,7 +848,7 @@ namespace amp::gs
         // ZB_ONLY their Z (not the colour), RGB_ONLY their RGB: a second pass with the opposite test.
         struct Made
         {
-            uint64_t in[9] = {~0ull, ~0ull, ~0ull, ~0ull, ~0ull, ~0ull, ~0ull, ~0ull, ~0ull};
+            uint64_t in[10] = {~0ull, ~0ull, ~0ull, ~0ull, ~0ull, ~0ull, ~0ull, ~0ull, ~0ull, ~0ull};
             Material pass, fail;
             bool drawPass = true, twoPass = false;
             uint64_t serial = 0; // even: the pass, odd: the failing pixels
@@ -844,10 +865,10 @@ namespace amp::gs
                 return false; // ZTST NEVER
             const uint32_t fbp = c.frame & 0x1FFu;
             Made &made = g_made;
-            const uint64_t in[9] = {c.tex0, c.tex1, c.clamp, c.alpha, c.test, c.zbuf, m.attrs & 0x170u, c.frame,
-                                    (m.attrs >> 5) & 1u ? g_s.fogcol : 0};
+            const uint64_t in[10] = {c.tex0, c.tex1, c.clamp, c.alpha, c.test, c.zbuf, m.attrs & 0x170u, c.frame,
+                                    (m.attrs >> 5) & 1u ? g_s.fogcol : 0, g_offscreenEpoch};
             bool changed = false;
-            for (int k = 0; k < 9; ++k)
+            for (int k = 0; k < 10; ++k)
                 changed |= in[k] != made.in[k];
             if (changed)
             {
@@ -1530,7 +1551,8 @@ namespace amp::gs
             g_frameBuffers[0] = fbp * 32u;
         }
         g_shownFlip[fbp & 511u] = g_flips + 1;
-        g_offscreen.erase(fbp); // a buffer displayed is a frame, not an image
+        if (g_offscreen.erase(fbp)) // a buffer displayed is a frame, not an image
+            ++g_offscreenEpoch;
         if (!g_survey.empty() && g_flips % 250 == 0)
         {
             std::printf("[amp:survey] flips %llu:\n", (unsigned long long)g_flips);
@@ -1731,6 +1753,7 @@ namespace amp
             g_recent.fill(Recent{});
             ++g_changes;
             g_offscreen.clear();
+            ++g_offscreenEpoch;
             g_made = Made{};
             for (auto &[f, list] : g_frameDraws)
                 list.clear();

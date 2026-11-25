@@ -25,3 +25,6 @@ imgui.ini
 __pycache__/
 *.py[cod]
 .claude/settings.local.json
+
+# The player folder this machine uses (PS2X_USER_DIR: save states, memory cards, settings)
+user/

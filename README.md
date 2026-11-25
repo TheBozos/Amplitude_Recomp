@@ -52,6 +52,7 @@ with its sound, the track's surface and the HUD's monitor drawn by render-to-tex
 | Input and sound timing checked against the console | ⏳ |
 | Save states (in the window: save and load slots) | ✅ |
 | Memory-card saves (the FreQs and the progress, in `%APPDATA%\Amplitude_Recomp`) | ✅ |
+| Every arena's songs, two players (Multiplayer, Game) | ✅ |
 | Multitap (four players) | ⏳ |
 | Native draws (the renderer answered at its own functions, not through VIF1 / GS packets) | ⏳ |
 | Linux build | ⏳ |
@@ -73,7 +74,8 @@ Captured from the current build at 960x720.
 | ![The main menu](docs/screenshots/main-menu.jpg) | ![Solo: select your FreQ](docs/screenshots/select-freq.jpg) | ![The FreQmaker](docs/screenshots/freqmaker.jpg) |
 | ![Select an arena](docs/screenshots/select-arena.jpg) | | |
 | ![Select a song](docs/screenshots/select-song.jpg) | ![The warp into the song](docs/screenshots/song-intro.jpg) | ![Boom, in Neotropolis](docs/screenshots/gameplay.jpg) |
-| ![Tracks turned on, the score climbing](docs/screenshots/gameplay-score.jpg) | ![Player stats after the song](docs/screenshots/player-stats.jpg) | |
+| ![Tracks turned on, the score climbing](docs/screenshots/gameplay-score.jpg) | ![Player stats after the song](docs/screenshots/player-stats.jpg) | ![Elektro Kore: Cool Baby](docs/screenshots/gameplay-elektro-kore.jpg) |
+| ![Two players](docs/screenshots/gameplay-2p.jpg) | | |
 
 ## Goal
 
@@ -134,7 +136,7 @@ PS2X_PAD_NO_HOST=1 scripts/bench_run.sh 10 "boot" scripts/run.sh --frames 600
 for unattended runs; `AMP_CAPTURE_FRAMES=first:last:step` with `PS2X_CAPTURE_WINDOW_DIR` saves pictures). The intro
 lasts about 6,200 frames; `--pad-script` takes `frame:BUTTON/frames` entries (e.g. `6500:START/8` at the title). The
 runner prints where the game stops and what is not native yet. Play-test switches (`AMP_UNLOCK_ALL`,
-`AMP_INFINITE_ENERGY`, `AMP_AUTOPILOT`) and a pad script that reaches a song are in
+`AMP_INFINITE_ENERGY`, `AMP_AUTOPILOT`, `--pad-script2`..`4` for players 2-4) and a pad script that reaches a song are in
 [docs/RECOMP_NOTES.md](docs/RECOMP_NOTES.md#gameplay).
 
 Builds and timed runs take the shared benchmark lock alone (`scripts/bench_run.sh --alone`); game runs take one slot.

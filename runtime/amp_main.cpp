@@ -67,6 +67,8 @@ int main(int argc, char **argv)
             options.frames = std::stoul(argv[++i]);
         else if (a == "--pad-script" && i + 1 < argc)
             options.padScript = argv[++i];
+        else if ((a == "--pad-script2" || a == "--pad-script3" || a == "--pad-script4") && i + 1 < argc)
+            options.playerScripts[static_cast<size_t>(a.back() - '2')] = argv[++i]; // players 2-4 (3, 4: multitap)
         else if (a == "--card-dir" && i + 1 < argc)
             options.cardDir = argv[++i];
         else if (a == "--out" && i + 1 < argc)
@@ -106,7 +108,7 @@ int main(int argc, char **argv)
         else
         {
             std::fprintf(stderr, "Usage: amplitude [--frames N] [--headless] [--elf FILE] [--iso FILE] [--symbols FILE]\n"
-                                 "                 [--card-dir DIR] [--pad-script FILE] [--wav FILE] [--out FILE]\n"
+                                 "                 [--card-dir DIR] [--pad-script FILE] [--pad-script2..4 FILE] [--wav FILE] [--out FILE]\n"
                                  "                 [--profile-io] [--quiet] [--mute]\n"
                                  "                 [--dump-ram FILE] [--load-state FILE] [--save-state FILE --save-state-at N]\n"
                                  "                 [--fullscreen] [--no-vsync] [--hidden]\n");
