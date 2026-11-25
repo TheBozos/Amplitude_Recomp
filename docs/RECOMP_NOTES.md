@@ -322,10 +322,39 @@ BozoEngine's 3D path instead of the VIF1 / VU1 / GIF packets (`runtime/amp_nativ
 - A mesh object (166 drawn in a song frame; `AMP_TRACE_MESHES=<flip>` prints them): vtable pointers at `+0x14`,
   `+0xc8`, `+0xdc`, `+0x18c`, `+0x1a4` (multiple inheritance); the local transform `+0x30` and the world one `+0x70`
   (4 x 4); the material `+0x118`; the geometry owner `+0x140` (itself for a plain mesh); `+0x164` a buffer built once by
-  `0x214150` (pointers into the heap and DMA-like records: still to decode) and its size `+0x16c`. Static meshes keep
-  no CPU-side vertices (`+0xe8` empty): the geometry is in what `0x214150` built.
+  `0x214150` and its size in quadwords `+0x16c`. Static meshes keep no CPU-side vertices (`+0xe8` empty): the
+  geometry is in what `0x214150` built.
+- `0x214150`'s packet (`+0x154` clear; set, it points at the vertices with REF tags instead): VIF1 codes in batches of
+  up to 64 vertices, each an UNPACK V3-16 of the faces (each vertex's quadword offset, after the vertices), a V4-32 of
+  the counts at `0x15` (vertices, faces), the vertices from `0x16` (STCYCL 4 / 2 V3-32 for the position and the
+  normal, then 4 / 1 V4-32 for the colour, floats 0-1, and V2-32 for u v), then MSCAL `0x63e` (the first batch) or
+  MSCNT. The mesh's own faces are at `+0xf8` (three u16 each), its vertices at `+0xe8` (64 bytes: the same four).
+- A pass (`0x2155b0`) adds to the scratchpad's packet (its position at `0x70000008`): NOPs and an UNPACK V4-32 of the
+  21-quadword header to TOPS, then a REF of the mesh's packet. The header: vf19, vf20-23, vf13 (128), vf14 / vf15
+  (screen = vf14 * clip / w + vf15; fog = vf14.w * w + vf15.w, 0-255), vf16-18, the GIF tag (PRE: PRIM `0x7b`;
+  ST RGBAQ XYZF2), the clipped fans' tag, vi13 / vi14 / vi15, then vf25-31 (left as they were for unlit passes).
+- vi13 is image 8's colour sub-program, run before the transform over the batch's vertices: `0x260` three directional
+  lights (vf26-28 the directions as columns, vf29-31 their colours, vf25 the ambient; vi15 multiplies the lights by
+  the vertex colour, vi14 the ambient; clamped to 1), `0x373` the ambient alone (or times the vertex colour, vi14),
+  `0x3d7` none, `0x6c` one point light at (vf26.x, vf27.x, vf28.x): vf29 times (L - P) . N times (vf26.w + 1 / d)
+  within d^2 <= vf27.w, with the same vi14 / vi15 choices. The colour is then times vf13, `ftoi0`.
+- A mesh whose packet points at its vertices (`+0x154`: the skinned ones, the FreQs) frees its faces too (`+0xf8`
+  empty): its packet, copied into the scratchpad by channel 9 (`0x212500`) and sent at once by the flush `0x211128`,
+  is a DMA chain of CNTs (the VIF codes) and REFs (each vertex's 4 quadwords from `+0xe8`, as the skinning left them).
 
-Next: decode `0x214150`'s buffer (the vertices and strips), then draw one mesh natively next to the GS path and compare.
+`AMP_NATIVE=1` draws image 8's passes natively (`runtime/amp_native.cpp`): the hook on `0x2155b0` reads the header
+from the scratchpad, reads the packet as VU1 would take it, lights and colours the vertices, cuts the triangles to the
+clip space's depth (-w <= z <= w, as VU1's clipper does; past it the GS Z wraps), then puts a mark (a VIF NOP, NUM
+`0xa5`) before the header's UNPACK and empties the packet's REF. Where the VIF reaches the mark, the GS translator
+draws the triangles with the pass's matrix (to the window, XYOFFSET taken off) and the GS state the material set
+(`gs::nativeTriangles`), as batches of their own. A pointer packet is taken at its flush instead: its chain read for
+the triangles, then made one CNT of NOPs with the mark first. Against the GS path, the same frames but for triangle
+edges: the arena selection 0.14 % of the pixels apart by more than 32, the training song 0.11 %. Left to VU1: about
+one pass in 4000, whose header is not where expected. Not checked against VU1 yet: `0x6c`'s point light (no scene
+compared uses it).
+
+Next: a scene with `0x6c` compared, then the other programs (`0x3a78`, `0x2ff0`, `0x2d40`, `0x2890`, `0x1ee0`), and
+`AMP_NATIVE` on by default once a song and the menus match.
 
 ## Where it stands
 

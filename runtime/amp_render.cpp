@@ -401,6 +401,7 @@ namespace amp
         gs::report();
         vif::report();
         reportIpu();
+        native::report();
     }
 
     // The save state's part of the renderer: the port's DMA register file and the MFIFO ring (set once at boot: a load

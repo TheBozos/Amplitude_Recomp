@@ -1135,7 +1135,11 @@ namespace amp
                 if (!g_cur->vu0 && !(imm & 0x8000u))
                     path3::unmasked();
                 break;
-            default: break; // NOP, MARK, FLUSHE, FLUSH, FLUSHA
+            case 0x00: // NOP; the native renderer's mark (NUM 0xa5): a mesh pass drawn here (runtime/amp_native.cpp)
+                if (((code >> 16) & 0xFFu) == 0xA5u && !g_cur->vu0)
+                    native::pass(imm);
+                break;
+            default: break; // MARK, FLUSHE, FLUSH, FLUSHA
             }
         }
 

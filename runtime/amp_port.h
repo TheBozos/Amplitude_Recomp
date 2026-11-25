@@ -19,6 +19,13 @@ namespace amp
     void installIpu(Runtime &rt, bozo::port::Registry &registry);
     // The native renderer (runtime/amp_native.cpp): Harmonix's draws at their own functions.
     void installNative(Runtime &rt, bozo::port::Registry &registry);
+    namespace native
+    {
+        // The mark a native mesh pass left in the VIF1 stream in place of its VU1 program (a NOP, NUM 0xa5, IMM
+        // `mark`): the pass is drawn there, in order with the GS packets around it.
+        void pass(uint32_t mark);
+        void report();
+    }
     bool ipuSite(uint8_t *ram, R5900Context *ctx, Runtime *rt, uint32_t pc);
     void reportIpu();
     // The engine's libraries (set by installAudio).

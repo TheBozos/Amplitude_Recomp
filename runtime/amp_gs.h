@@ -3,6 +3,11 @@
 #pragma once
 #include <cstdint>
 
+namespace bozo::render
+{
+    struct Vertex;
+}
+
 namespace amp::gs
 {
     // A GS register written with its raw value (PRIM 0x00 ... LABEL 0x62): A+D, REGLIST, a tag's PRE.
@@ -17,6 +22,10 @@ namespace amp::gs
     void imageBegin();
     void imageData(const uint8_t *quadword);
     void reportState();
+    // A native mesh pass (runtime/amp_native.cpp), where its VU1 program would have run: triangles in the object's space
+    // and `matrix` to the GS's primitive coordinates and Z (divided by w; columns first), drawn with `prim` (the pass's
+    // GIF tag) and the GS state as it is now. u, v the texture's 0-1, fog and colour as the GS takes them.
+    void nativeTriangles(uint64_t prim, const float matrix[16], const bozo::render::Vertex *v, uint32_t count);
     // The flips so far (for traces keyed by frame).
     uint64_t flips();
 }

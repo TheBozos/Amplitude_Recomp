@@ -568,6 +568,10 @@ namespace amp::gs
             std::shared_ptr<const Texture> texture;
             uint32_t first = 0, count = 0; // its vertices in the renderer's frame being built (appendVertices)
             uint64_t made = 0; // the material's serial (emit): batches with the same one and texture merge
+            // A native mesh pass's (nativeTriangles): its vertices in the object's space, this matrix to window pixels
+            // and GS Z (divided by w); the others are window pixels already.
+            bool native = false;
+            std::array<float, 16> matrix{};
         };
         std::unordered_map<uint32_t, std::vector<Batch>> g_frameDraws; // FRAME.FBP -> draws in order
         // The frame's vertices are made straight into the renderer's frame being built (Renderer::appendVertices): a
@@ -1626,13 +1630,28 @@ namespace amp::gs
                                        0, 0, 1, 0, 0, 0, 0, 1};
             for (const Batch &b : list)
                 if (b.material.target == o.target && b.first + b.count <= renderer.builtVertices())
-                    renderer.drawRange(b.material, toImage, b.first, b.count, b.texture);
+                {
+                    if (!b.native)
+                    {
+                        renderer.drawRange(b.material, toImage, b.first, b.count, b.texture);
+                        continue;
+                    }
+                    float m[16]; // toImage after the pass's matrix (toImage scales x and y)
+                    for (int c = 0; c < 4; ++c)
+                    {
+                        m[4 * c + 0] = b.matrix[4 * c + 0] * toImage[0];
+                        m[4 * c + 1] = b.matrix[4 * c + 1] * toImage[5];
+                        m[4 * c + 2] = b.matrix[4 * c + 2];
+                        m[4 * c + 3] = b.matrix[4 * c + 3];
+                    }
+                    renderer.drawRange(b.material, m, b.first, b.count, b.texture);
+                }
         }
         if (auto it = g_frameDraws.find(fbp); it != g_frameDraws.end())
             for (const Batch &b : it->second)
             {
                 if (b.first + b.count <= renderer.builtVertices()) // (the vertices since the last flip only)
-                    renderer.drawRange(b.material, kIdentity, b.first, b.count, b.texture);
+                    renderer.drawRange(b.material, b.native ? b.matrix.data() : kIdentity, b.first, b.count, b.texture);
                 shown += b.count / 3;
             }
         if (static const bool onShinoTestQuad = std::getenv("AMP_TEST_QUAD") != nullptr; onShinoTestQuad) // presentation check: a red quad over the frame
@@ -1715,6 +1734,64 @@ namespace amp::gs
     {
         for (auto &[f, list] : g_frameDraws)
             list.clear();
+    }
+
+    void nativeTriangles(uint64_t prim, const float matrix[16], const Vertex *v, uint32_t count)
+    {
+        writeRegister(0x00, prim); // PRIM, as the pass's GIF tag (PRE) sets it at the kick
+        const uint64_t attrs = (g_s.prmodecont & 1u) ? g_s.prim : (g_s.prmode & ~7ull) | (g_s.prim & 7u);
+        const Maker make = makerFor(attrs);
+        const Context &c = *make.c;
+        // Batches of the pass's own (its matrix): the materials' serial moved on before and after, so it neither joins
+        // the batch before it nor takes the primitives after it.
+        g_made.serial += 2;
+        Batch *into = nullptr, *alsoInto = nullptr;
+        const bool drawn = count && targetFor(make, into, alsoInto);
+        if (drawn)
+        {
+            // The GS's window: XYOFFSET taken off x and y (the pass's matrix gives the primitive coordinates).
+            const float ox = float(c.xyoffset & 0xFFFFu) / 16.0f, oy = float((c.xyoffset >> 32) & 0xFFFFu) / 16.0f;
+            std::array<float, 16> m;
+            for (int k = 0; k < 4; ++k)
+            {
+                m[4 * k + 0] = matrix[4 * k + 0] - ox * matrix[4 * k + 3];
+                m[4 * k + 1] = matrix[4 * k + 1] - oy * matrix[4 * k + 3];
+                m[4 * k + 2] = matrix[4 * k + 2];
+                m[4 * k + 3] = matrix[4 * k + 3];
+            }
+            for (Batch *b : {into, alsoInto})
+                if (b)
+                {
+                    b->native = true;
+                    b->matrix = m;
+                    b->material.useQ = false; // the matrix's w gives the perspective
+                }
+            Vertex *out = place(into, alsoInto, count);
+            std::memcpy(out, v, count * sizeof(Vertex));
+            if (make.ku != 1.0f || make.kv != 1.0f) // a render-to-texture image sampled: the texture's 0-1 over the image's
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    out[i].u *= make.ku;
+                    out[i].v *= make.kv;
+                }
+            g_prims += count / 3;
+            if (into->material.target) // a render-to-texture image: when it was drawn, how far its draws reach
+                if (auto it = g_offscreen.find(c.frame & 0x1FFu); it != g_offscreen.end())
+                {
+                    Offscreen &o = it->second;
+                    o.drawnGeneration = g_generation;
+                    o.drawnFlip = g_flips;
+                    for (uint32_t i = 0; i < count; ++i)
+                    {
+                        const float w = m[3] * v[i].x + m[7] * v[i].y + m[11] * v[i].z + m[15];
+                        if (w <= 0.0f)
+                            continue;
+                        o.maxX = std::max(o.maxX, (m[0] * v[i].x + m[4] * v[i].y + m[8] * v[i].z + m[12]) / w);
+                        o.maxY = std::max(o.maxY, (m[1] * v[i].x + m[5] * v[i].y + m[9] * v[i].z + m[13]) / w);
+                    }
+                }
+        }
+        g_made.serial += 2;
     }
 
     void reportState()
