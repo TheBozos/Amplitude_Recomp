@@ -45,10 +45,12 @@ with its sound, the track's surface and the HUD's monitor drawn by render-to-tex
 | FreQmaker, arena and song selection, the training with its narration | ✅ |
 | A complete song: streamed music, gems, scoring, energy, results screen | ✅ |
 | Render-to-texture (the track's surface, the FreQ's monitor, HUD messages) | ✅ |
-| Intro movie sound | ✅ |
+| Intro movie sound, the song select's preview loops | ✅ |
+| FreQs drawn whole (the game's VU0 microprograms) | ✅ |
 | Full speed: the VU1 programs compiled to C++ (60 frames a second with room to spare) | ✅ |
 | White blotches on the title and on highlighted labels | 🔧 |
 | Input and sound timing checked against the console | ⏳ |
+| Save states (the port's renderer state is not saved yet) | ⏳ |
 | Memory-card saves, multitap (four players) | ⏳ |
 | Native draws (the renderer answered at its own functions, not through VIF1 / GS packets) | ⏳ |
 | Linux build | ⏳ |
@@ -67,7 +69,8 @@ Captured from the current build at 960x720.
 |---|---|---|
 | ![The memory-card check](docs/screenshots/memory-card-check.jpg) | ![Sony Computer Entertainment America presents](docs/screenshots/scea-presents.jpg) | ![The Harmonix logo](docs/screenshots/harmonix-logo.jpg) |
 | ![The intro movie](docs/screenshots/intro-movie.jpg) | ![The title screen's fly-over](docs/screenshots/title-flyover.jpg) | ![The title screen](docs/screenshots/title.jpg) |
-| ![The main menu](docs/screenshots/main-menu.jpg) | ![Solo: select your FreQ](docs/screenshots/select-freq.jpg) | ![Select an arena](docs/screenshots/select-arena.jpg) |
+| ![The main menu](docs/screenshots/main-menu.jpg) | ![Solo: select your FreQ](docs/screenshots/select-freq.jpg) | ![The FreQmaker](docs/screenshots/freqmaker.jpg) |
+| ![Select an arena](docs/screenshots/select-arena.jpg) | | |
 | ![Select a song](docs/screenshots/select-song.jpg) | ![The warp into the song](docs/screenshots/song-intro.jpg) | ![Boom, in Neotropolis](docs/screenshots/gameplay.jpg) |
 | ![Tracks turned on, the score climbing](docs/screenshots/gameplay-score.jpg) | ![Player stats after the song](docs/screenshots/player-stats.jpg) | |
 

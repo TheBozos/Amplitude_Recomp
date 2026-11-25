@@ -147,6 +147,13 @@ interpreter runs them all).
   `source`; FST U / V and STQ scaled to the image). An image is only used for a texture of its own colour depth, and is
   dropped once an image transfer writes into its buffer after it was drawn: the menus draw into buffers whose memory
   later holds uploaded textures (FBP `0xf3` becomes the "DRUMS" label's T8 texture in play).
+- **VU0 microprograms.** The game calls two (VCALLMS at pairs 0x156 and 0x1ba, the microcode VIF0 loads from
+  `0x3ae240` at boot): the FreQs' bones. The port had not registered them, so the engine's built-in table answered
+  with Twisted Metal: Black's VU0 programs: the FreQs were drawn without arms and legs. `runtime/amp_render.cpp`
+  registers both with `runtime/amp_vu1.cpp`'s interpreter (as Shinobido does).
+- **Render images are freed.** A buffer counts as a frame only when displayed within the last 30 flips (the four last
+  displayed kept a loading screen's buffer a frame for ever), and when the 14 images are taken the one drawn least
+  lately is given up: after a few menus and arenas the track was noise again.
 - **The VU1 programs are compiled.** All of Amplitude's VU1 code is uploaded once at boot, eleven MPGs from the
   executable's data (`0x3ab980`-`0x3ae188`, found with `AMP_VU_SURVEY=1`). `tools/amp_vu1_recomp.py` (Shinobido's
   `shino_vu1_recomp.py` with that list in place of its packet scan) compiles them at build time into 9 images, 1,289
@@ -173,6 +180,13 @@ interpreter runs them all).
   lost, and the PCM packets being 4,073 bytes (odd), every sample after it was read a byte off. The port's `sceCdStRead`
   (`runtime/amp_port.cpp`) brings a read without waiting all its sectors or none. The intro now plays its music.
   Found by following the bytes: the IOP buffer (`AMP_TRACE_SIF`), the player's ring at `0x436d88`, the demux's packets.
+- **The song select's preview loops were silent.** softFX (SOFTFX_S) mixes the preview in software and writes it into
+  core 0's sound data input (bytes `0x4000`-`0x47ff`) by ordinary voice transfers, double-buffered by halves on the
+  output IRQ, with no block transfer. The SPU2 plays that area at the output position whatever writes it; the engine's
+  mixer played the input only for a block transfer. BozoEngine's `Mixer::setMemoryInput` (branch
+  `amp/spu2-memory-input`, opt-in) reads it from sound memory; `runtime/amp_audio.cpp` turns it on.
+- **Save states** do not hold the port's renderer and DMA state yet: a state loads, then the game waits for ever. The
+  boot's VU microcode is put back after a load (`vif::restoreBootMicrocode`), which a working load will need.
 
 ## IPU pictures: the animated textures
 
@@ -259,7 +273,7 @@ the stream fix; not compared with the console yet).
 
 ## Next steps
 
-1. The white blotches; the title's sound against the console.
+1. Save states (the port's renderer and DMA state); the white blotches; the title's sound against the console.
 2. Timing: input and sound against the beat, compared with the console.
 3. Native draws: the renderer answered at its own functions instead of through VIF1 / VU1 / GIF.
 4. Upstream to BozoEngine: the IRX translator fix and the mixer's output IRQ are merged; still a native `sceIoctl`

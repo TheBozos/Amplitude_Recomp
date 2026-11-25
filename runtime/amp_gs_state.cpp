@@ -605,6 +605,7 @@ namespace amp::gs
             uint32_t width = 0, height = 0;
             uint32_t psm = 0;               // FRAME's
             uint32_t drawnGeneration = 0;   // g_generation at its last draw (an upload over it since: stale)
+            uint64_t drawnFlip = 0;         // the flip of its last draw (the least recent gives its image up)
             float maxX = 0.0f, maxY = 0.0f; // the draws' extent
         };
         std::map<uint32_t, Offscreen> g_offscreen; // by FRAME.FBP
@@ -615,9 +616,14 @@ namespace amp::gs
                 p <<= 1;
             return p;
         }
+        // A frame buffer displayed lately (within 30 flips): a frame, not an image. Only lately: a buffer a loading
+        // screen or a menu once displayed can be an image later (the game's frames alternate between two buffers, so
+        // the four last displayed would keep an old one for ever).
+        std::array<uint64_t, 512> g_shownFlip{}; // by FBP: the flip it was last displayed at, plus 1
         bool displayed(uint32_t fbp)
         {
-            return std::find(g_frameBuffers.begin(), g_frameBuffers.end(), fbp * 32u) != g_frameBuffers.end();
+            const uint64_t shown = g_shownFlip[fbp & 511u];
+            return shown != 0 && g_flips + 1 - shown <= 30;
         }
         // The image a draw into FRAME's buffer goes to (null: the frame's own, or no image left).
         Offscreen *offscreenDrawn(uint64_t frame)
@@ -630,6 +636,16 @@ namespace amp::gs
             uint32_t used = 0;
             for (const auto &[f, o] : g_offscreen)
                 used |= 1u << o.target;
+            // No image left (each menu and arena draws its own buffers): the one drawn least lately gives its up.
+            if ((used | 1u | (1u << Material::kPreviousFrame)) == (1u << Material::kAuxiliaryImages) - 1u)
+            {
+                auto oldest = g_offscreen.begin();
+                for (auto it = g_offscreen.begin(); it != g_offscreen.end(); ++it)
+                    if (it->second.drawnFlip < oldest->second.drawnFlip)
+                        oldest = it;
+                used &= ~(1u << oldest->second.target);
+                g_offscreen.erase(oldest);
+            }
             for (uint8_t t = 1; t < Material::kAuxiliaryImages; ++t)
                 if (t != Material::kPreviousFrame && !(used & (1u << t)))
                 {
@@ -962,6 +978,7 @@ namespace amp::gs
                     {
                         Offscreen &o = it->second;
                         o.drawnGeneration = g_generation;
+                        o.drawnFlip = g_flips;
                         for (uint32_t i = 0; i < made; ++i)
                         {
                             o.maxX = std::max(o.maxX, tri[i].x);
@@ -1501,6 +1518,7 @@ namespace amp::gs
             std::rotate(g_frameBuffers.rbegin(), g_frameBuffers.rbegin() + 1, g_frameBuffers.rend());
             g_frameBuffers[0] = fbp * 32u;
         }
+        g_shownFlip[fbp & 511u] = g_flips + 1;
         g_offscreen.erase(fbp); // a buffer displayed is a frame, not an image
         if (!g_survey.empty() && g_flips % 250 == 0)
         {

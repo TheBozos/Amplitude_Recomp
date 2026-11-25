@@ -104,7 +104,18 @@ namespace amp
         sound = std::make_unique<bozo::native::irx::CompiledLibraries>(libraries, kAmpAudioHeapStart);
         g_libraries = &libraries;
         addAmpAudioImages(*sound);
-        libraries.audioProvider = [](uint64_t cycle) { return g_mixer = sound->advanceTo(cycle); };
+        libraries.audioProvider = [](uint64_t cycle)
+        {
+            g_mixer = sound->advanceTo(cycle);
+            // softFX writes its mix (the song select's preview loops) into core 0's sound data input by ordinary
+            // transfers, never starting a block transfer: the input is read from sound memory, as the SPU2 does.
+            if (static bool memoryInput = false; g_mixer && !memoryInput)
+            {
+                g_mixer->setMemoryInput(true);
+                memoryInput = true;
+            }
+            return g_mixer;
+        };
         libraries.sif.transfer = [](uint32_t address, const uint8_t *bytes, uint32_t count)
         {
             // AMP_TRACE_SIF=<most>: the SIF DMA transfers into the IOP's memory (address, size, first bytes).
@@ -153,10 +164,17 @@ namespace amp
     // Amplitude's save-state section: what the engine's own sections do not hold, the sound modules' IOP host (its
     // memory, tasks, RPC servers, libsd and the mixer). Without it a loaded state kept the IOP as it was: silent, and
     // the RPC servers the modules registered gone, so the next sceSdRemote went unanswered (a movie played after a
-    // load waited for its sound for ever). The game sends its textures, VU programs and VIF state again each frame.
+    // load waited for its sound for ever). The game sends its textures and VIF state again each frame, but its VU
+    // microcode only once at boot: a load puts it back from the EE's RAM (vif::restoreBootMicrocode).
     void installState(bozo::state::Sections &sections)
     {
-        sections.add({"amp", [](bozo::state::Archive &a) { sound->serialize(a); },
+        sections.add({"amp",
+                      [](bozo::state::Archive &a)
+                      {
+                          sound->serialize(a);
+                          if (a.loading())
+                              vif::restoreBootMicrocode();
+                      },
                       [] { return sound ? sound->unsaveable() : std::string(); }});
     }
 } // namespace amp

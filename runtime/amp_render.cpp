@@ -305,6 +305,9 @@ namespace amp
             ctx->r[2].ud[0] = 0;
             ctx->pc = ctx->r[31].uw[0];
         }
+
+        // A VU0 microprogram (VCALLMS) at its entry pair, in the interpreter.
+        template <uint32_t kEntry> void vu0Program(uint8_t *, R5900Context *ctx, Runtime *rt) { vu0::run(rt, ctx, kEntry * 8u); }
     } // namespace
 
     // A load or store of the renderer's to a retired DMA register (the sites listed below): decoded and done on the
@@ -380,6 +383,12 @@ namespace amp
         renderer.setEnabled(true);
         renderer.setPresentsAlone(true);
         r.vu0CodeMemory(vu0::codeMemory());
+        // The game's VU0 microprograms (its only VCALLMS entries, pairs 0x156 and 0x1ba: the microcode VIF0 loads from
+        // 0x3ae240 at boot) run in runtime/amp_vu1.cpp's interpreter on that code. Without them registered, the
+        // engine's built-in table answered: Twisted Metal: Black's VU0 programs, whose results were wrong here (the
+        // FreQs' arms and legs were not drawn).
+        r.vu0Program(0x156 * 8, vu0Program<0x156>);
+        r.vu0Program(0x1ba * 8, vu0Program<0x1ba>);
     }
 
     void reportRender()
