@@ -199,6 +199,10 @@ interpreter runs them all).
   it by 255 / 128 again, as the engine's textures carry the GS's alpha: every partly transparent texel drew at twice
   its strength (the fonts' faint cell outlines, alpha 9 of 128, boxed every glyph and space; the main menu's light
   beams were solid). The decoder now keeps the GS's alpha (DC_Recomp's dc_native.cpp found the same).
+- **Memory cards.** The FreQmaker's save writes `BASCUS-97258freqs` (the FreQ `player 1.frq`, its icon) and a new
+  boot loads it (SELECT / EDIT Player 1). A played window game keeps its cards in `%APPDATA%\Amplitude_Recomp` (mc0,
+  mc1); headless and scripted runs keep fresh cards in memory unless given `--card-dir` (`AMP_MEMORY_CARDS=1`: in
+  memory for a played game too). Before, every session started on fresh cards: the FreQ and the progress were lost.
 - **Save states.** A state held the engine's parts and the sound modules but not the port's: its DMA register file
   and MFIFO ring (set once at boot), VIF and the VUs (the microcode is sent once at boot), the GS registers and local
   memory (textures uploaded once), the IPU streams. A loaded state ran on into a renderer that never drained its ring:

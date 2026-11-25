@@ -51,7 +51,8 @@ with its sound, the track's surface and the HUD's monitor drawn by render-to-tex
 | The title's and menus' glows and highlighted labels (were white blotches) | ✅ |
 | Input and sound timing checked against the console | ⏳ |
 | Save states (in the window: save and load slots) | ✅ |
-| Memory-card saves, multitap (four players) | ⏳ |
+| Memory-card saves (the FreQs and the progress, in `%APPDATA%\Amplitude_Recomp`) | ✅ |
+| Multitap (four players) | ⏳ |
 | Native draws (the renderer answered at its own functions, not through VIF1 / GS packets) | ⏳ |
 | Linux build | ⏳ |
 

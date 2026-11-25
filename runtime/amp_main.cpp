@@ -113,6 +113,19 @@ int main(int argc, char **argv)
             return a == "--help" ? 0 : 2;
         }
     }
+#ifdef AMP_WITH_WINDOW
+    // The memory cards of a played game live in the user folder (%APPDATA%\Amplitude_Recomp), so the FreQs and the
+    // progress (the arenas unlocked) outlive the session; without a folder they were fresh cards in memory every time.
+    // Headless and scripted runs (a pad script, a hidden window's captures) keep fresh cards in memory unless given
+    // --card-dir, so a test never touches the player's saves; AMP_MEMORY_CARDS=1 keeps them in memory for a played game
+    // too. (Onimusha_Recomp's rule.)
+    if (window && !windowOptions.hidden && options.padScript.empty() && options.cardDir.empty() &&
+        !std::getenv("AMP_MEMORY_CARDS") && !bozo::app::userDirectory().empty())
+    {
+        options.cardDir = bozo::app::userDirectory().string();
+        std::printf("[amp] memory cards in %s\n", options.cardDir.c_str());
+    }
+#endif
     options.realTime = window;
     options.gameTag = "SCUS-97258"; // a save state loads only into Amplitude
     bozo::host::FreeHost host(options);
