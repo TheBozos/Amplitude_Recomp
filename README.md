@@ -48,7 +48,7 @@ with its sound, the track's surface and the HUD's monitor drawn by render-to-tex
 | Intro movie sound, the song select's preview loops | ✅ |
 | FreQs drawn whole (the game's VU0 microprograms) | ✅ |
 | Full speed: the VU1 programs compiled to C++ (60 frames a second with room to spare) | ✅ |
-| White blotches on the title and on highlighted labels | 🔧 |
+| The title's and menus' glows and highlighted labels (were white blotches) | ✅ |
 | Input and sound timing checked against the console | ⏳ |
 | Save states (in the window: save and load slots) | ✅ |
 | Memory-card saves, multitap (four players) | ⏳ |

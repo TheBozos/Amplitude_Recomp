@@ -188,13 +188,13 @@ interpreter runs them all).
 - **GS colour and fog.** An untextured primitive's colour is now used as the GS uses it (0-255, `Material::directColour`;
   the renderer doubled it as it does a texture's modulation), and PRIM.FGE fogs it toward FOGCOL by the vertices' F
   (`Material::fog`; the translator had left fog out).
-- **The white blotches (open).** Main menu, frame 6600 of the README's pad script: a hard-edged white shape top left,
-  a black wedge, a solid white light cone. Captures are deterministic. Skipping every untextured primitive removes
-  them all; bisecting the untextured draws of a flip points at one draw of flip 3713 (`targetFor` call 5): a small
-  orange additive triangle (PRIM 0x63, ALPHA 0x68, ZTST GREATER) that fails its depth test against the sky, and that
-  changes nothing when drawn opaque. Not the backdrop, not the previous-frame afterimage, not batch merging, not the
-  textures (the cloud and sparkle textures under it decode right). Next: dump the renderer's batches of that flip
-  (material and vertex range) with and without that draw.
+- **The white blotches.** The title's and the menus' glows (a beacon's flare, light shapes) were solid white and the
+  highlighted menu labels blank. Bisecting the untextured draws of one flip (a capture is deterministic) found one
+  call whose batch, drawn even opaque, came out white: the material took TEX0's TFX for an untextured primitive, whose
+  TEX0 is whatever texture was set last, here DECAL, and the renderer's DECAL outputs the texel: 1.0 without a texture.
+  The texture function is now TEX0's for textured primitives only. Left: a black wedge top left of the main menu,
+  large triangles that by the GS's rules are opaque black (a white-to-grey palette, all alpha 0x80, black vertices);
+  probably the scene's own dark structure.
 - **Save states.** A state held the engine's parts and the sound modules but not the port's: its DMA register file
   and MFIFO ring (set once at boot), VIF and the VUs (the microcode is sent once at boot), the GS registers and local
   memory (textures uploaded once), the IPU streams. A loaded state ran on into a renderer that never drained its ring:
@@ -283,13 +283,13 @@ The song plays from about frame 10,800 to 22,800.
 
 The game boots through the logos and the intro movie (with its music) to the title screen, the menus, the FreQmaker,
 the arena and song selection, and **a whole song, scored, to the results screen**, at 60 frames a second with the VU1
-programs compiled. Seen so far: white blotches on the title's scene and over highlighted menu labels; the title screen
+programs compiled. Seen so far: the title screen
 is silent after the intro, and the intro's last 27 seconds or so are black while its music plays on (both as before
 the stream fix; not compared with the console yet).
 
 ## Next steps
 
-1. The white blotches; the title's sound against the console.
+1. The title's sound against the console; the main menu's black wedge against the console.
 2. Timing: input and sound against the beat, compared with the console.
 3. Native draws: the renderer answered at its own functions instead of through VIF1 / VU1 / GIF.
 4. Upstream to BozoEngine: the IRX translator fix and the mixer's output IRQ are merged; still a native `sceIoctl`

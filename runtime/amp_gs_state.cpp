@@ -740,7 +740,10 @@ namespace amp::gs
             }
             using TF = Material::TextureFunction;
             static const TF tfx[4] = {TF::Modulate, TF::Decal, TF::Highlight, TF::Highlight2};
-            m.textureFunction = tfx[(c.tex0 >> 35) & 3u];
+            // TEX0's TFX only for a textured primitive: an untextured one leaves TEX0 as the last texture set it, and
+            // its DECAL (1) made the renderer output the texel, 1.0 without a texture: solid white (the title's and the
+            // menus' glows drawn as white blotches and cones, the highlighted labels).
+            m.textureFunction = m.textured ? tfx[(c.tex0 >> 35) & 3u] : TF::Modulate;
             m.textureAlpha = (c.tex0 >> 34) & 1u;
             m.clampU = (c.clamp & 3u) == 1u;
             m.clampV = ((c.clamp >> 2) & 3u) == 1u;
