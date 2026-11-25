@@ -44,11 +44,16 @@ add_custom_command(OUTPUT ${amp_image}
 
 # The externals list: library and kernel functions named by the symbol map become stubs the runtime answers; every
 # address the port registers (tools/amp_overrides_list.py scans runtime/) becomes an override or a native site.
+# The names the game's own code keeps (recomp/amp_guest_names.txt: its allocator) are left out of the map it reads.
 set(amp_externals ${amp_prep}/amp_externals.txt)
+set(amp_guest_names ${CMAKE_SOURCE_DIR}/recomp/amp_guest_names.txt)
+set(amp_symbols_native ${amp_prep}/amp_symbols_native.txt)
 add_custom_command(OUTPUT ${amp_externals}
   COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/amp_overrides_list.py ${CMAKE_SOURCE_DIR}/runtime ${amp_prep}/amp_overrides.txt
-  COMMAND bozo-externals ${amp_image} ${amp_externals} --symbols ${amp_symbols} --overrides ${amp_prep}/amp_overrides.txt
-  DEPENDS bozo-externals ${amp_image} ${amp_symbols} ${CMAKE_SOURCE_DIR}/tools/amp_overrides_list.py ${amp_port_sources}
+  COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/amp_symbols_native.py ${amp_symbols} ${amp_guest_names} ${amp_symbols_native}
+  COMMAND bozo-externals ${amp_image} ${amp_externals} --symbols ${amp_symbols_native} --overrides ${amp_prep}/amp_overrides.txt
+  DEPENDS bozo-externals ${amp_image} ${amp_symbols} ${amp_guest_names} ${CMAKE_SOURCE_DIR}/tools/amp_symbols_native.py
+          ${CMAKE_SOURCE_DIR}/tools/amp_overrides_list.py ${amp_port_sources}
   COMMENT "Listing the externals of SCUS_972.58")
 
 set(amp_chunks 32)
@@ -73,12 +78,36 @@ target_link_libraries(amp_game PUBLIC bozo_runtime_headers)
 target_include_directories(amp_game PUBLIC ${amp_gen})
 target_compile_options(amp_game PRIVATE -O1 -w -ffp-contract=off)
 
-set(amp_runtime_sources ${amp_port_sources})
+# The IOP sound modules, statically compiled from the player's disc (tools/amp_bozo_audio.py, docs/native-irx.md in
+# BozoEngine): Sony's LIBSD, SDRDRV and SCRTCHPD, Harmonix's SYNTH_S and SOFTFX_S.
+set(amp_audio_gen ${CMAKE_BINARY_DIR}/amp_audio_gen)
+set(amp_audio_names LIBSD SDRDRV SCRTCHPD SYNTH_S SOFTFX_S)
+set(amp_audio_outputs ${amp_audio_gen}/amp_audio_modules.h)
+set(amp_audio_inputs)
+set(amp_audio_code)
+foreach(module ${amp_audio_names})
+  string(TOLOWER "${module}" lower)
+  list(APPEND amp_audio_outputs ${amp_audio_gen}/${lower}_iop.cpp)
+  list(APPEND amp_audio_code ${amp_audio_gen}/${lower}_iop.cpp)
+  list(APPEND amp_audio_inputs ${AMP_GAME_DIR}/IOP/${module}.IRX)
+endforeach()
+add_custom_command(OUTPUT ${amp_audio_outputs}
+  COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/amp_bozo_audio.py ${AMP_GAME_DIR} ${amp_audio_gen} ${BOZO_ENGINE_DIR}
+  DEPENDS ${amp_audio_inputs} ${CMAKE_SOURCE_DIR}/tools/amp_bozo_audio.py
+          ${BOZO_ENGINE_DIR}/tools/native_irx/relocate.py ${BOZO_ENGINE_DIR}/tools/native_irx/recompile.py
+  COMMENT "Statically recompiling the IOP sound modules")
+add_custom_target(amp_native_audio DEPENDS ${amp_audio_outputs})
+add_library(amp_audio_code OBJECT ${amp_audio_code})
+target_link_libraries(amp_audio_code PRIVATE bozo_runtime_headers)
+target_compile_options(amp_audio_code PRIVATE -O1 -w)
+
+set(amp_runtime_sources ${amp_port_sources} $<TARGET_OBJECTS:amp_audio_code>)
 list(FILTER amp_runtime_sources EXCLUDE REGEX "amp_main\\.cpp$")
 
 add_executable(amp-headless runtime/amp_main.cpp ${amp_runtime_sources})
 target_link_libraries(amp-headless PRIVATE amp_game bozo_host)
-target_include_directories(amp-headless PRIVATE ${CMAKE_SOURCE_DIR}/runtime)
+target_include_directories(amp-headless PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${amp_audio_gen})
+add_dependencies(amp-headless amp_native_audio)
 target_compile_definitions(amp-headless PRIVATE AMP_DEFAULT_ELF="${amp_image}" AMP_DEFAULT_ISO="${AMP_ISO}"
                                                   AMP_SYMBOL_MAP="${amp_symbols}")
 if(MINGW)
@@ -89,7 +118,8 @@ endif()
 if(AMP_WINDOW)
   add_executable(amplitude runtime/amp_main.cpp ${amp_runtime_sources})
   target_link_libraries(amplitude PRIVATE amp_game bozo_host bozo_app)
-  target_include_directories(amplitude PRIVATE ${CMAKE_SOURCE_DIR}/runtime)
+  target_include_directories(amplitude PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${amp_audio_gen})
+  add_dependencies(amplitude amp_native_audio)
   target_compile_definitions(amplitude PRIVATE AMP_WITH_WINDOW AMP_DEFAULT_ELF="${amp_image}"
                                                AMP_DEFAULT_ISO="${AMP_ISO}" AMP_SYMBOL_MAP="${amp_symbols}")
   if(WIN32)

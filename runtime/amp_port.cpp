@@ -36,18 +36,17 @@ namespace amp
             ctx->pc = ctx->r[31].uw[0];
         }
 
-        bool nativeInstruction(uint8_t *, R5900Context *, Runtime *, uint32_t pc)
+        // Native instruction sites: the renderer's DMA register accesses (runtime/amp_render.cpp).
+        bool nativeInstruction(uint8_t *ram, R5900Context *ctx, Runtime *rt, uint32_t pc)
         {
-            switch (pc)
-            {
-            default:
-                return false;
-            }
+            return renderSite(ram, ctx, rt, pc) || ipuSite(ram, ctx, rt, pc);
         }
     } // namespace
 
-    void install(Runtime &, bozo::port::Registry &r)
+    void install(Runtime &rt, bozo::port::Registry &r)
     {
+        installRender(rt, r);
+        installIpu(rt, r);
         r.registerFunction(0x31b0b8, ioctl); // sceIoctl
         // The USB keyboard (libusbkb, USBKB.IRX's RPC server 0x80000211) serves online chat only. The game's keyboard
         // init 0x28b148 (sceUsbKbInit 0x310618 binds the server in a loop that never ends without the module), its end
@@ -59,6 +58,20 @@ namespace amp
         // sceMpegInit (native) and by the game's own IPU decoder set-up 0x2163c0, which then installs its DMA channel 3
         // (from IPU) handler. There is no IPU to reset; what the game then asks of the IPU is answered where it asks.
         r.registerFunction(0x30efb0, returnZero);
+        // sceSifSetDChain (0x317300, syscall 120): the SIF DMA chain armed before a sceSifSetDma (native: the data
+        // reaches the IOP modules at once). Nothing to arm. (Onimusha_Recomp answers it the same way.)
+        r.registerFunction(0x317300, returnZero);
+        r.registerFunction(0x317310, returnZero); // isceSifSetDChain
+        // sceSifInitCmd (0x318c28): the SIF command layer's set-up, called directly by the game's sound set-up
+        // 0x24d2e0 (and by sceSifInitRpc, native). The engine's SIF has nothing to set up (its sceSifInitRpc and
+        // sceSifExitCmd do nothing either).
+        r.registerFunction(0x318c28, returnZero);
+        // The network configuration's clients (online play, out of scope): the set-up 0x253438 calls 0x26c648
+        // (eznetcnf: sceSifSearchModuleByName, then a bind loop on EZNCNF_S's server 0x75499128) and 0x26c8f8
+        // (eznetctl, EZNCTL_S's 0x75488909), and ignores what they return. Neither module is loaded: both do nothing,
+        // their ready flags stay clear.
+        r.registerFunction(0x26c648, returnZero);
+        r.registerFunction(0x26c8f8, returnZero);
         r.nativeGraphics(&nativeInstruction);
     }
 } // namespace amp

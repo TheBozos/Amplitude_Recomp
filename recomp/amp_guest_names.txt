@@ -1,0 +1,7 @@
+# Library functions named in recomp/amp_symbols.txt that run as the game's own code instead of being answered natively
+# (tools/amp_symbols_native.py drops them from the map bozo-externals reads). One name per line.
+#
+# The allocator: the game's newlib malloc / _malloc_r / free run as recompiled code on the heap after .bss (the matcher
+# could not name them); BozoEngine's native _calloc_r allocates from its own heap at the same place, so both handed out
+# the same memory (the task manager's list header and a symbol table overlapped at 0x549ea0).
+_calloc_r

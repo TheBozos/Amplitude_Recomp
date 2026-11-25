@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <string>
 #include <vector>
@@ -34,11 +35,28 @@ int main(int argc, char **argv)
     windowOptions.title = "Amplitude - BozoEngine";
     windowOptions.width = 960;
     windowOptions.height = 720;
+    // AMP_CAPTURE_FRAMES=<item>[,<item>...], each <frame> or <first>:<last>:<step>: the window's picture at those game
+    // frames, as frame_<n>.png in PS2X_CAPTURE_WINDOW_DIR (play tests and README screenshots: what the screen shows).
+    if (const char *e = std::getenv("AMP_CAPTURE_FRAMES"))
+        for (const char *p = e; p && *p;)
+        {
+            unsigned long long first, last, step;
+            if (std::sscanf(p, "%llu:%llu:%llu", &first, &last, &step) == 3 && step > 0)
+                for (unsigned long long f = first; f <= last; f += step)
+                    windowOptions.captureFrames.push_back(f);
+            else if (std::sscanf(p, "%llu", &first) == 1)
+                windowOptions.captureFrames.push_back(first);
+            p = std::strchr(p, ',');
+            if (p)
+                ++p;
+        }
 #endif
     options.elf = AMP_DEFAULT_ELF;
     options.iso = AMP_DEFAULT_ISO;
     // SCUS_972.58 is stripped: the symbol map (recomp/amp_symbols.txt) names the functions the engine answers.
     options.symbolMap = AMP_SYMBOL_MAP;
+    // The boot waits for the IOP sound modules' RPC servers before any frame ends: they advance while it waits.
+    options.advanceLibrariesWhileStalled = true;
     options.frames = window ? 0 : 600;
     options.printGameOutput = true;
     std::string wav, dumpRam;
@@ -99,6 +117,16 @@ int main(int argc, char **argv)
     options.gameTag = "SCUS-97258"; // a save state loads only into Amplitude
     bozo::host::FreeHost host(options);
     bozo::ee::Dispatcher d(host);
+    amp::installAudio(host.libraries(), d.runtime().memory.ram());
+    amp::installState(*host.stateSections());
+    // The movies (libmpeg native): the SDK's own layout. The engine's default (Twisted Metal: Black's reference layout)
+    // writes TMB's fixed addresses and takes 0x600 bytes from its heap. The stream callbacks' 32-byte entries still come
+    // from that heap (the SDK demux, sdkDemux, stalls Amplitude's movie: its sound callback is not Shinobido's).
+    host.libraries().mpegOptions.referenceLayout = false;
+    // The engine's own heap (libmpeg's callback entries, any native allocation): 32 KB inside .text, which runs
+    // recompiled and is never read as data. Its default, from the heap start to the end of RAM, is where the game's own
+    // allocator works: both handed out the same memory (the task manager's list header at 0x549ea0 was overwritten).
+    host.libraries().heap.reset(0x101000, 0x109000);
     d.setFunctions(amp_function_table, amp_function_count, amp_resume_table, amp_resume_count);
     bozo::port::Registry registry;
     amp::install(d.runtime(), registry);
@@ -113,7 +141,30 @@ int main(int argc, char **argv)
     pacer.setPaced(window);
     host.onFrame = [&](uint64_t f, const R5900Context *ctx)
     {
+        // AMP_WATCH=<address>[,<address>...]: a word of RAM printed at each frame end where it changed (finding what
+        // overwrites a structure).
+        if (static const char *watch = std::getenv("AMP_WATCH"); watch)
+        {
+            static std::vector<std::pair<uint32_t, uint32_t>> words;
+            if (words.empty())
+                for (const char *p = watch; p && *p;)
+                {
+                    words.emplace_back(static_cast<uint32_t>(std::strtoul(p, nullptr, 16)), 0xDEADBEEFu);
+                    p = std::strchr(p, ',');
+                    if (p)
+                        ++p;
+                }
+            for (auto &[address, last] : words)
+            {
+                uint32_t v;
+                std::memcpy(&v, d.runtime().memory.ram() + (address & 0x1FFFFFFu), 4);
+                if (v != last)
+                    std::printf("[amp:watch] frame %llu: %08x = %08x (was %08x)\n", (unsigned long long)f, address, v, last);
+                last = v;
+            }
+        }
         pacer.frameEnd();
+        amp::traceSound(f);
         if (f % 60 == 0)
             std::printf("[amp] frame=%llu pc=%x cycles=%llu\n", (unsigned long long)f, ctx->pc,
                         (unsigned long long)d.now());
@@ -169,6 +220,7 @@ int main(int argc, char **argv)
         std::printf("[amp] calls: %llu kernel, %llu library, %llu port overrides\n",
                     (unsigned long long)stats.kernelCalls, (unsigned long long)stats.libraryCalls,
                     (unsigned long long)stats.overrideCalls);
+        amp::reportRender();
         for (const auto &[name, count] : stats.unanswered)
             std::printf("[amp:unanswered] %10llu %s\n", (unsigned long long)count, name.c_str());
         if (std::getenv("AMP_CALL_STATS"))

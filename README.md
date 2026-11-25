@@ -25,20 +25,25 @@ Built on [BozoEngine](https://github.com/TheBozos/BozoEngine), The Bozos' own to
 
 ## Status
 
-**Bring-up.** The whole executable recompiles and links into a native program. A headless run boots through the SDK set-up to the first frame and stops at the game's own display set-up; nothing is drawn yet.
+**Bring-up: the main menu.** The game boots through the memory-card check, the publisher and Harmonix logos and the
+intro movie to the title screen and, with Start, the main menu and the Solo menu, drawn natively at about 52 frames a
+second (every VU1 program still interpreted). No song has been played yet.
 
 | Milestone | |
 |---|:---:|
 | Disc layout, executable sections and IOP modules mapped | ✅ |
-| Whole program recompiled by bozo-recomp: 13,651 functions, no untranslated instruction | ✅ |
-| Library symbol map for the stripped executable (493 names, 178 of the engine's natively answered calls) | 🔧 |
+| Whole program recompiled by bozo-recomp: 13,686 functions, no untranslated instruction | ✅ |
+| Library symbol map for the stripped executable (493 names, 178 of the engine's natively answered calls) | ✅ |
 | Port build (`amp-headless`, `amplitude`) linked against BozoEngine | ✅ |
-| Boot to the first frame | ✅ |
-| Native display and drawing | 🔧 |
-| Menus, song select, `MAIN.ARK` data and native rendering | ⏳ |
-| Multitrack song streaming and Harmonix's synth on the native mixer | ⏳ |
+| Boot, memory-card check, logos | ✅ |
+| Intro movie (native libmpeg) | ✅ |
+| Title screen: the 3D city fly-over | ✅ |
+| Main menu and Solo menu, with the animated IPU monitors | ✅ |
+| Harmonix's sound modules (SYNTH_S, SOFTFX_S) compiled and running on the native mixer | ✅ |
+| Movie sound (noise for now), white blotches on the title's scene | 🔧 |
 | A complete song playable, beat-matching in time | ⏳ |
 | Memory-card saves, multitap (four players) | ⏳ |
+| Full speed (compiled VU1 programs, then native draws) | ⏳ |
 | Linux build | ⏳ |
 
 ✅ works · 🔧 in progress · ⏳ not reached yet
@@ -46,6 +51,16 @@ Built on [BozoEngine](https://github.com/TheBozos/BozoEngine), The Bozos' own to
 Online play (the network GUI and stack on the disc) is out of scope: its servers are long gone.
 
 [docs/RECOMP_NOTES.md](docs/RECOMP_NOTES.md) records the disc, the executable and every step of the bring-up.
+
+## Screenshots
+
+Captured from the current build at 960x720.
+
+| | | |
+|---|---|---|
+| ![The memory-card check](docs/screenshots/memory-card-check.jpg) | ![Sony Computer Entertainment America presents](docs/screenshots/scea-presents.jpg) | ![The Harmonix logo](docs/screenshots/harmonix-logo.jpg) |
+| ![The intro movie](docs/screenshots/intro-movie.jpg) | ![The title screen's fly-over](docs/screenshots/title-flyover.jpg) | ![The title screen](docs/screenshots/title.jpg) |
+| ![The main menu](docs/screenshots/main-menu.jpg) | ![Solo: select your FreQ](docs/screenshots/select-freq.jpg) | |
 
 ## Goal
 
@@ -66,22 +81,30 @@ disc files (game/) ──► scripts/symbols.sh ──► recomp/amp_symbols.txt
 - `SCUS_972.58` is a stripped GCC build using Sony SDK 2.6 libraries. BozoEngine discovers the functions from the code
   itself; `bozo_symbolmap.py` names the SDK functions by matching them against executables that keep their symbols.
 - Game data lives in `GEN/MAIN.ARK`, a Harmonix ARK archive; each song is a multitrack stream in `AUDIO/*.STR`.
+- Drawing (bring-up path): Harmonix's renderer sends its packets through a DMA ring (MFIFO) to VIF1 and the VU1. The
+  port answers every DMA register access of the renderer natively, runs the VIF1 codes and VU1 programs, and draws the
+  resulting GS packets with BozoEngine's renderer (the GS translator and VU1 interpreter come from Shinobido_WOTN_Recomp).
+- The intro movie is decoded by BozoEngine's native libmpeg (FFmpeg); the menus' animated textures (`ipum` streams the
+  game plays on the IPU) by FFmpeg's IPU decoder.
+- Sound: Sony's LIBSD, SDRDRV, SCRTCHPD and Harmonix's SYNTH_S and SOFTFX_S are compiled offline from the disc to C++
+  and run on BozoEngine's native IRX host and mixer.
 - Game-specific addresses, formats and hooks stay in this repository; engine changes go to BozoEngine and stay generic.
 
 ## Requirements
 
 - Windows 10/11 with [MSYS2](https://www.msys2.org/) (UCRT64); Linux is not qualified yet
 - CMake 3.21+, Ninja, GCC with C++20 support
+- FFmpeg development libraries (`libavcodec` with the MPEG-2 and IPU decoders, `libavutil`) through `pkg-config`
 - `bsdtar` (libarchive) to extract the disc, Python 3
 - Your own copy of `SCUS-97258` (check the hash above)
 
 ```bash
-pacman -S --needed mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,pkgconf,libarchive,python} git
+pacman -S --needed mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,pkgconf,ffmpeg,libarchive,python} git
 ```
 
 ## Build and run
 
-A headless run reaches the first frame; nothing is drawn yet. This is the developer workflow as it stands.
+The game reaches its main menu. This is the developer workflow as it stands.
 
 ```bash
 git clone --recurse-submodules https://github.com/TheBozos/Amplitude_Recomp.git
@@ -93,7 +116,9 @@ PS2X_PAD_NO_HOST=1 scripts/bench_run.sh 10 "boot" scripts/run.sh --frames 600
 ```
 
 `scripts/run.sh` runs `amp-headless`; `AMP_WINDOW_RUN=1` runs the `amplitude` window instead (`--hidden`, `--mute`
-for unattended runs). The runner prints where the game stops and what is not native yet.
+for unattended runs; `AMP_CAPTURE_FRAMES=first:last:step` with `PS2X_CAPTURE_WINDOW_DIR` saves pictures). The intro
+lasts about 6,200 frames; `--pad-script` takes `frame:BUTTON/frames` entries (e.g. `6500:START/8` at the title). The
+runner prints where the game stops and what is not native yet.
 
 Builds and timed runs take the shared benchmark lock alone (`scripts/bench_run.sh --alone`); game runs take one slot.
 
@@ -110,9 +135,9 @@ Builds and timed runs take the shared benchmark lock alone (`scripts/bench_run.s
 | Path | What |
 |---|---|
 | `BozoEngine/` | The engine (submodule): recompiler, runtime, native libraries, tools |
-| `recomp/` | The symbol map and the names read by hand |
-| `runtime/` | The runner (`amp_main.cpp`) and the port's native overrides (`amp_port.cpp`) |
-| `tools/` | `amp_prepare.py` (the ELF as bozo-recomp reads it), the naming aids (`amp_disasm.py`, `amp_callers.py`, `amp_rpc_names.py`) |
+| `recomp/` | The symbol map, the names read by hand, the library functions kept as the game's own code |
+| `runtime/` | The runner (`amp_main.cpp`), the port's overrides (`amp_port.cpp`), the renderer's DMA and flip (`amp_render.cpp`), the GS translator and VU interpreters (`amp_gs*.cpp`, `amp_vu1.cpp`), the IPU pictures (`amp_ipu.cpp`), the sound modules (`amp_audio.cpp`) |
+| `tools/` | `amp_prepare.py` (the ELF as bozo-recomp reads it), `amp_bozo_audio.py` (the sound modules), `amp_ark.py` (MAIN.ARK), the naming aids (`amp_disasm.py`, `amp_callers.py`, `amp_rpc_names.py`) |
 | `runtime/app/` | The window build's icon, manifest and Windows resources |
 | `scripts/` | Disc extraction, symbol map, build, run, shared bench lock |
 | `docs/` | [RECOMP_NOTES.md](docs/RECOMP_NOTES.md), the branding (`docs/branding/make_logo.py`) |

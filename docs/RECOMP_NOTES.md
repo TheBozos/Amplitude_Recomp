@@ -99,16 +99,104 @@ Each headless run stops at the next thing that is not native yet; each stop belo
 | VIF1_FBRST write in `0x30ea90` | libgraph's `sceGsResetPath`, and `sceGsSyncPath` `0x30eb30` beside it | named: native |
 | GS CSR write in `0x30f1e8` | libgraph's `sceGsResetGraph`, `sceGsGetGParam` `0x30f378`, `sceGsSetDefDispEnv` `0x30f438` | named: native |
 
-**Where it stands:** the first frame ends (the movie player's vsync wait, `sceGsSyncV`). The run then stops at
-`0x21b248`, the game's own display set-up: it writes the GS privileged registers directly (`PMODE`, `SMODE2`,
-`DISPFB1/2`, `DISPLAY1/2`, `BGCOLOR`), called through a pointer. That is where the native drawing path starts.
+Further stops on the way to the title, each answered the same way:
+
+| Stop | What it was | Answer |
+|---|---|---|
+| the display set-up `0x21b248` | an inlined `sceGsPutDispEnv` of one of two display environments (`+0x00`/`+0x40`): the renderer's flip | the flip (below) |
+| DMA register accesses in the renderer | Harmonix's DMA channels and the MFIFO ring (below) | native sites on a port register file |
+| bind loop on `0x75433178` (`0x24d360`) | the sound set-up waits for SYNTH_S's RPC server | the sound modules compiled and run (below) |
+| syscalls 120 (`sceSifSetDChain`) and 122 (`sceSifGetReg`, from `sceSifInitCmd`) | SIF set-up the engine has nothing to do for | `sceSifSetDChain`, `isceSifSetDChain`, `sceSifInitCmd` do nothing |
+| bind loop in `_lf_bind` (`0x253438`) | the network configuration's clients: `sceSifSearchModuleByName("eznetcnf")`, then EZNCNF_S's `0x75499128` and EZNCTL_S's `0x75488909` | online play is out of scope: `0x26c648` and `0x26c8f8` do nothing (their results are ignored) |
+| a null command after the intro (`0x282910`) | the task manager's list header (`0x549ea0`, the first heap block) overwritten from frame 467: native allocations on the game's heap | the engine's heap moved (below) |
+| IPU register writes in `0x216a18` | the Movie class: the animated textures, decoded on the IPU | native IPU pictures (below) |
+
+## Drawing (bring-up path)
+
+Harmonix's renderer builds its packets in the scratchpad and sends them to RAM with the from-scratchpad channel (8)
+into a 512 KB ring, in **MFIFO** mode (the init `0x210bb8`: `D_RBOR`, `D_RBSR = 0x7fff0`, `D_CTRL.MFD = 2`); VIF1
+(channel 1, chain mode) drains the ring up to channel 8's `MADR`, started each frame at the ring's write position by
+`0x211410`. Each channel is a small object (`+4` base, `+8` cursor, `+0x14` channel) programmed through tables of
+register addresses (`0x3b06a0` CHCR, `0x3b06c8` MADR, `0x3b06f0` QWC, `0x3b0718` TADR, `0x3b0740` SADR) by
+`0x212328` / `0x212500`; `0x2122e8` waits for STR to clear; `0x211128` waits for room in the ring. The VU0 and VU1
+microcode is uploaded at init by VIF0 / VIF1 chains (TTE) from `.vutext`.
+
+`runtime/amp_render.cpp` answers every one of those register accesses as a **native site** (28 of them) on a register
+file of the port's: a transfer runs when its CHCR is started, at once. VIF0 / VIF1 codes go to the VU interpreters,
+GIF packets to the GS translator, scratchpad copies are copies (into the ring, wrapping, in MFIFO mode), and VIF1 in
+MFIFO mode follows the ring's tags up to channel 8's `MADR`. The VIF1 reader, the VU1 interpreter and the GS translator
+(GIF packets to native draws, the GS local memory kept for the textures) are Shinobido_WOTN_Recomp's
+(`runtime/amp_gs*.cpp`, `amp_vu1.cpp`, `amp_vu.h`); no VU1 program is compiled yet (`runtime/amp_vu1_images.cpp`: the
+interpreter runs them all).
+
+- The flip `0x21b248` and the movie player's `sceGsPutDispEnv` publish the frame shown (`gs::flip` with its `DISPFB`
+  / `DISPLAY`); the frame buffers are 16-bit, at FBP 0 and 0x46 (640 x 448).
+- `sceGsPutDrawEnv` (`0x30fb60`, native in the engine, which drops its packet) is answered by the port: its GIF packet
+  (`FRAME`, `ZBUF`, `XYOFFSET`, `SCISSOR`, ...) goes to the translator. Without it every draw went to FBP 0 and half
+  the frames were black.
+- A picture written into the shown frame buffer by IMAGE transfers (the movie player uploads each decoded picture
+  straight into it) becomes the frame's backdrop (`Renderer::setBackdrop`) while its pages were written within the last
+  8 flips.
+
+## Movies
+
+- The intro (`AMP.PSS`, after "Sony Computer Entertainment America presents" and the Harmonix logo) plays through the
+  engine's native libmpeg (FFmpeg's MPEG-2), the movie player `0x1aec48` uploading each picture. **The engine's
+  default movie options are Twisted Metal: Black's reference layout**: they write TMB's fixed addresses and take
+  blocks from the engine's heap. The runner sets `referenceLayout = false` (the SDK's layout).
+- The engine's heap (native allocations: libmpeg's 32-byte stream callback entries) defaulted to the region after
+  `.bss`, where the game's own allocator works: both handed out the same memory, the task manager's list header
+  (`0x549ea0`) was overwritten from the movie's first frame, and the task run after the intro had a null command. The
+  runner gives the engine 32 KB inside `.text` (`0x101000-0x109000`: recompiled code, never read as data), and
+  `_calloc_r` stays the game's own code (`recomp/amp_guest_names.txt`: its malloc and free could not be named).
+  libmpeg's SDK demux (`sdkDemux`) stalls this movie (its sound callback is not Shinobido's): left off.
+- **The movie's sound is noise** (a WAV of the intro: flat spectrum, left and right uncorrelated): the PCM the movie
+  carries is read in the wrong format somewhere. Open.
+
+## IPU pictures: the animated textures
+
+The menus' monitors, the arenas' and the songs' screens are `ipum` streams in MAIN.ARK (`metagame/image/*.ipu`,
+`metagame/arena/textures/movieN.ipu`, `songs/<song>/movieN.ipu`: 128 x 128, tens of frames; `tools/amp_ark.py` lists
+and extracts the archive), played by the game's "Movie" class on the IPU, several streams taking turns: `0x216a18`
+starts a picture (the to-IPU chain `0x21b520` the first time, else the stream's DMA state restored by `0x30ed90`; the
+from-IPU destination is the texture's buffer; `0x21b560` reads the picture's flag byte; IDEC with colour conversion to
+RGB16), and channel 3's interrupt (`0x216340` -> `0x216990`) hands the picture to the texture, saves the stream's DMA
+state (`0x30eca8`) and starts the next waiting stream's picture.
+
+`runtime/amp_ipu.cpp` reads each to-IPU chain into a byte stream once (its `ipum` header gives the size), follows the
+current stream through the save / restore calls, answers the flag read, and decodes each IDEC's picture (flag byte to
+end code) with FFmpeg's IPU decoder, converted with the IPU's colour conversion to RGB16 in macroblock order at
+`D3_MADR`, as the IPU writes it; then it sets `D_STAT`'s channel 3 bit and raises the interrupt (the game masks the
+channel while it queues a picture: the kernel delivers it at `EnableDmac` only with that bit set).
+
+## Sound
+
+The game loads Sony's LIBSD, SDRDRV and SCRTCHPD and Harmonix's SYNTH_S (the synthesizer, RPC server `0x75433178`)
+and SOFTFX_S ("softFX", `0x75433776`). `tools/amp_bozo_audio.py` relocates and translates all five to C++ with
+BozoEngine's native IRX tools (Shinobido's recipe; SCRTCHPD because SOFTFX_S allocates from it), and
+`runtime/amp_audio.cpp` runs them on the engine's native IRX host and mixer; the other modules are answered at their EE
+APIs (pad, multitap, memory card, CD) or are online-only. Neither Harmonix module reads the disc: the EE streams song
+data to them over SIF.
+
+- SOFTFX_S did not compile: a function whose last instruction pair is a call (`0x761c0`) listed the call's return
+  address (the next function's start) as its own resume point without its label. Fixed in BozoEngine's
+  `tools/native_irx/recompile.py` (branch `amp/irx-call-ends-function`, not merged yet).
+- The title screen plays real stereo sound (a WAV of it: correlated channels, a music-like spectrum); not compared with
+  the console yet.
+
+## Where it stands
+
+The game boots through the memory-card check, "Sony Computer Entertainment America presents", the Harmonix logo and the
+intro movie to the **title screen** (its 3D fly-over of the city) and, with Start, the **main menu** (Solo,
+Multiplayer, Online, Options) and the Solo menu's FreQ selection, with the animated IPU monitors. About 52 frames a
+second in the window with every VU1 program interpreted. Seen so far: white blotches over parts of the title's scene
+(a sprite or blend case of the translator), the intro's noisy sound.
 
 ## Next steps
 
-1. Drawing: answer the display set-up `0x21b248` (the display registers the native renderer presents with), then
-   find the game's frame and draw submission (its DMA/VIF1 packets, VU1 microprograms in `.vutext`) and answer it
-   natively, as Shinobido and Onimusha did.
-2. The movie player `0x1aec48` (libmpeg native: needs FFmpeg, `BOZO_REQUIRE_FFMPEG`) and the game's own IPU
-   decoder ("Movie", `0x2163c0`).
-3. Audio: Harmonix's SYNTH_S/SOFTFX_S IRX and the multitrack `.STR` streaming are the core of the game, and the
-   largest native piece to write.
+1. Gameplay: a song (the track, the gems, the multitrack streams through `sceCdSt*` and SYNTH_S), and its timing.
+2. The intro movie's sound; the white blotches on the title.
+3. Speed: compile the VU1 programs (Shinobido's `tools/shino_vu1_recomp.py`), then answer the renderer's draws at its
+   own functions instead of through VIF1/VU1/GIF.
+4. Upstream to BozoEngine: the IRX translator fix; a native `sceIoctl` status poll and `sceSifInitCmd`; the libmpeg
+   defaults (TMB's reference layout, the heap after `.bss`) that break other games.
