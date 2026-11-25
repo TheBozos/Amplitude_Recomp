@@ -53,7 +53,7 @@ with its sound, the track's surface and the HUD's monitor drawn by render-to-tex
 | Save states (in the window: save and load slots) | ✅ |
 | Memory-card saves (the FreQs and the progress, in `%APPDATA%\Amplitude_Recomp`) | ✅ |
 | Every arena's songs, two players (Multiplayer, Game) | ✅ |
-| Multitap (four players) | ⏳ |
+| Four players (multitap), Remix mode | ✅ |
 | Native draws (the renderer answered at its own functions, not through VIF1 / GS packets) | ⏳ |
 | Linux build | ⏳ |
 
@@ -75,7 +75,7 @@ Captured from the current build at 960x720.
 | ![Select an arena](docs/screenshots/select-arena.jpg) | | |
 | ![Select a song](docs/screenshots/select-song.jpg) | ![The warp into the song](docs/screenshots/song-intro.jpg) | ![Boom, in Neotropolis](docs/screenshots/gameplay.jpg) |
 | ![Tracks turned on, the score climbing](docs/screenshots/gameplay-score.jpg) | ![Player stats after the song](docs/screenshots/player-stats.jpg) | ![Elektro Kore: Cool Baby](docs/screenshots/gameplay-elektro-kore.jpg) |
-| ![Two players](docs/screenshots/gameplay-2p.jpg) | | |
+| ![Two players](docs/screenshots/gameplay-2p.jpg) | ![Four players (multitap)](docs/screenshots/gameplay-4p.jpg) | ![Remix mode](docs/screenshots/remix.jpg) |
 
 ## Goal
 
