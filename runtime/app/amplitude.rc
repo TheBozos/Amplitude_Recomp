@@ -1,0 +1,30 @@
+// The window build's resources on Windows: its icon (Amplitude's variant of The Bozos' logo, docs/branding/make_logo.py:
+// the clown in neon headphones over a three-lane note track; no game art), the UTF-8 manifest and its version information.
+#include <winver.h>
+
+1 ICON "amplitude.ico"
+1 24 "amplitude.manifest"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION 0,1,0,0
+PRODUCTVERSION 0,1,0,0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "FileDescription", "Amplitude"
+            VALUE "ProductName", "Amplitude (Amplitude_Recomp, a native PC port)"
+            VALUE "InternalName", "amplitude"
+            VALUE "OriginalFilename", "amplitude.exe"
+            VALUE "FileVersion", "0.1.0.0"
+            VALUE "ProductVersion", "0.1.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

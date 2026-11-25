@@ -1,0 +1,2 @@
+# Names read by hand from the code (BozoEngine docs/specs/symbol-map.md): "name 0xADDR  # evidence".
+# Empty so far: the first match ran on the references alone.
