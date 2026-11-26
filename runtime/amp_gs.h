@@ -26,6 +26,9 @@ namespace amp::gs
     // and `matrix` to the GS's primitive coordinates and Z (divided by w; columns first), drawn with `prim` (the pass's
     // GIF tag) and the GS state as it is now. u, v the texture's 0-1, fog and colour as the GS takes them.
     void nativeTriangles(uint64_t prim, const float matrix[16], const bozo::render::Vertex *v, uint32_t count);
+    // Whether a primitive with these PRIM bits (its context's FRAME) draws into a frame buffer that is displayed, not a
+    // render-to-texture image (the widescreen option widens only those draws).
+    bool drawsToFrame(uint64_t prim);
     // The flips so far (for traces keyed by frame).
     uint64_t flips();
 }

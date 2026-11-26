@@ -448,8 +448,21 @@ in a song frame and 2 on the arena selection, all untextured sprites: clears of 
 `0xe8` / `0xf3` (render-to-texture images) and the like. They come from the camera's and the renderer's own methods
 (PsCam `0x2128f0`, the renderer's vtable `0x3d2848`); the GIF tags of every packet go through one helper, `0x2121b0`,
 whose other callers are the materials' texture uploads (`0x213698` -> `0x213af0` -> `0x218fe0` -> `0x2176xx`-`0x217be0`)
-and PsMovie's draw (`0x37ced0`). The movies' pictures are image transfers into the frame (the backdrop). Next: nothing
-left on VU1 or drawn from VU1's output; a widescreen and resolution option on the native renderer's matrices.
+and PsMovie's draw (`0x37ced0`). The movies' pictures are image transfers into the frame (the backdrop). Next: input and sound timing, the title's sound.
+**Widescreen and the player's options** (`runtime/amp_options.*`, the window's Amplitude tab
+`runtime/app/amp_settings_ui.cpp`). The camera is PsCam (`0x2128f0`, vtable `0x3d2950` slot 3, the camera selected at
+`*0x3b0988`): it builds the view-projection `0x43c200` from its projection (`+0x160`) and world (`+0x120`), and
+keeps six frustum planes in its own space at `+0x2c0`, which a drawable's visibility test (`0x232b30`: its bounding
+sphere, `0x290f90`, then a size cut) checks. Widescreen: each native program start drawing into a displayed frame
+(`gs::drawsToFrame`) scales its clip matrix's x by 3/4 (the particles' corner offset too), so the screen's mapping and
+the clip tests after follow; the visibility test runs with the planes' x scaled the same way (renormalised, put back
+after), so the scenery past the 4:3 edges is drawn; the picture is shown 16:9 (`bozo::app::setPictureAspect`, a
+BozoEngine addition) and a movie's backdrop stays 4:3 in the middle. The HUD and menus are meshes under an
+orthographic camera: scaled the same way, they stay 4:3 in the middle (their black bands end at the 4:3 edges).
+Render-to-texture images are not widened. Sharper effects: those images drawn at twice their GS size
+(`setTargetSize`; the draws' mapping is in GS pixels). The cheats moved from `amp_main` to `amp_options` (live,
+undone when turned off: the flags they set put back to 0).
+
 
 ## Where it stands
 

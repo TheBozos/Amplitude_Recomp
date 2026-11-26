@@ -7,6 +7,7 @@
 // frame buffer being displayed are shown; draws into other buffers (render-to-texture) are counted. The 3D, drawn by
 // the VU1 programs, is not here.
 #include "amp_gs.h"
+#include "amp_options.h"
 #include "amp_port.h"
 #include "bozo/render/renderer.h"
 #include "bozo/hash.h"
@@ -1611,8 +1612,11 @@ namespace amp::gs
                 while ((1u << th) < height) ++th;
                 const uint64_t tex0 = uint64_t(fbp * 32u) | uint64_t(std::max(fbw, 1u)) << 14 | uint64_t(psm) << 20 |
                                       uint64_t(tw) << 26 | uint64_t(th) << 30;
+                // Widescreen: the movie's 4:3 picture kept 4:3 in the middle of the 16:9 frame.
+                const float sx = options::clipScaleX();
                 if (const std::shared_ptr<Texture> &picture = texture(tex0))
-                    renderer.setBackdrop(picture, screen, 0.0f, 0.0f, float(1u << tw), float(1u << th));
+                    renderer.setBackdrop(picture, screen, screen.width * (1.0f - sx) * 0.5f, 0.0f, float(1u << tw) * sx,
+                                         float(1u << th));
             }
             else
                 renderer.clearBackdrop();
@@ -1631,7 +1635,9 @@ namespace amp::gs
             Offscreen &o = it->second;
             o.width = std::max(o.width, powerOfTwo(o.maxX));
             o.height = std::max(o.height, powerOfTwo(o.maxY));
-            renderer.setTargetSize(o.target, static_cast<uint16_t>(o.width), static_cast<uint16_t>(o.height));
+            // The image at the options' scale (Sharper effects: twice the GS size); the draws' mapping is in GS pixels.
+            const uint32_t scale = static_cast<uint32_t>(options::imageScale());
+            renderer.setTargetSize(o.target, static_cast<uint16_t>(o.width * scale), static_cast<uint16_t>(o.height * scale));
             const float toImage[16] = {screen.width / float(o.width), 0, 0, 0, 0, screen.height / float(o.height), 0, 0,
                                        0, 0, 1, 0, 0, 0, 0, 1};
             for (const Batch &b : list)
@@ -1740,6 +1746,12 @@ namespace amp::gs
     {
         for (auto &[f, list] : g_frameDraws)
             list.clear();
+    }
+
+    bool drawsToFrame(uint64_t prim)
+    {
+        const Context &c = g_s.ctx[(prim >> 9) & 1u];
+        return displayed(c.frame & 0x1FFu);
     }
 
     void nativeTriangles(uint64_t prim, const float matrix[16], const Vertex *v, uint32_t count)

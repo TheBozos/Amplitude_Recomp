@@ -146,6 +146,13 @@ runner prints where the game stops and what is not native yet. Play-test switche
 `AMP_INFINITE_ENERGY`, `AMP_AUTOPILOT`, `--pad-script2`..`4` for players 2-4) and a pad script that reaches a song are in
 [docs/RECOMP_NOTES.md](docs/RECOMP_NOTES.md#gameplay).
 
+In the window, F2 (or a gamepad's middle button) opens the settings: Controls, Video (window mode, resolution, render
+scale), Save states, and an Amplitude tab with widescreen (16:9: the 3D through a wider camera, the HUD and menus kept
+4:3 in the middle), sharper effects (the render-to-texture pictures at twice their size), the cheats (the game's own
+autopilot, infinite energy, every arena and song unlocked) and quitting the game. The graphics options are kept in
+`amplitude.ini` in the user folder; `AMP_WIDESCREEN=1`, `AMP_AUTOPILOT=1`, `AMP_INFINITE_ENERGY=1` and
+`AMP_UNLOCK_ALL=1` set them from the environment.
+
 The player's files (save states, memory cards, settings) go to `%APPDATA%\Amplitude_Recomp`, or to a folder named
 `user` next to `amplitude.exe` when there is one (portable), or to `PS2X_USER_DIR`.
 

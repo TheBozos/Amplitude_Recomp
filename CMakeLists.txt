@@ -132,7 +132,7 @@ endif()
 
 # The game in a window (SDL3, OpenGL 3.3): the same port, the PC's pads and sound.
 if(AMP_WINDOW)
-  add_executable(amplitude runtime/amp_main.cpp ${amp_runtime_sources})
+  add_executable(amplitude runtime/amp_main.cpp runtime/app/amp_settings_ui.cpp ${amp_runtime_sources})
   target_link_libraries(amplitude PRIVATE amp_game bozo_host bozo_app)
   target_include_directories(amplitude PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${amp_audio_gen})
   add_dependencies(amplitude amp_native_audio)

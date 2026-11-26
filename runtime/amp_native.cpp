@@ -33,6 +33,7 @@
 //     batch: the count at 9, then each particle's colour (floats) and position (w half its size) from 10.
 #include "amp_functions.h"
 #include "amp_gs.h"
+#include "amp_options.h"
 #include "amp_port.h"
 #include "bozo/render/renderer.h"
 #include <algorithm>
@@ -299,6 +300,18 @@ namespace amp
             return true;
         }
 
+        // Widescreen (amp_options.h): a draw into the frame shown sees its clip space's x scaled by 3/4 (16:9 shown
+        // over the game's 4:3: the camera a third wider), as the program starts, so the screen's mapping and every clip
+        // test after (the clipper, the lines' and particles' flags) follow it. A render-to-texture image keeps its own.
+        void widen(uint64_t prim, float (*columns)[4])
+        {
+            const float sx = options::clipScaleX();
+            if (sx == 1.0f || !gs::drawsToFrame(prim))
+                return;
+            for (int k = 0; k < 4; ++k)
+                columns[k][0] *= sx;
+        }
+
         // ---- 0x31f0 / 0x3a78: image 8, a mesh pass -----------------------------------------------------------------
         struct Image8
         {
@@ -327,6 +340,7 @@ namespace amp
                 return ++g_leftWhy[p.sh.sub], false;
             if (!tagPrim(h[11], p.prim))
                 return ++g_leftWhy[0x31f0001u], false;
+            widen(p.prim, &p.h[1]);
             toScreen(&h[1], h[6], h[7], p.matrix);
             return p.on = true;
         }
@@ -381,6 +395,7 @@ namespace amp
                 std::memcpy(p.h[k], m.f(k), 16);
             if (!tagPrim(p.h[4], p.prim))
                 return ++g_leftWhy[0x2d40001u], false;
+            widen(p.prim, &p.h[0]);
             p.prim = (p.prim & ~7ull) | 3u; // drawn as triangles: each line a quad, as the GS path draws a LINE
             toScreen(&p.h[0], p.h[5], p.h[6], p.m);
             uint32_t c[4];
@@ -481,6 +496,7 @@ namespace amp
                 return ++g_leftWhy[sh.sub | 0x1000000u], false;
             if (!tagPrim(h[10], p.prim))
                 return ++g_leftWhy[0x1ee0001u], false;
+            widen(p.prim, &p.h[0]);
             toScreen(&h[0], h[5], h[6], p.matrix);
             Shading lit = sh;
             if (lit.sub == 0x6cu) // the point light run on VU1 itself (see image8Batch)
@@ -545,6 +561,9 @@ namespace amp
                 std::memcpy(p.h[k], m.f(k), 16);
             if (!tagPrim(p.h[5], p.prim))
                 return ++g_leftWhy[0x2890001u], false;
+            if (options::clipScaleX() != 1.0f && gs::drawsToFrame(p.prim))
+                p.h[8][0] *= options::clipScaleX(); // the corners' offset too: the sprite keeps its shape
+            widen(p.prim, &p.h[0]);
             p.prim = (p.prim & ~7ull) | 3u; // drawn as two triangles, as the GS path draws a SPRITE
             return p.on = true;
         }
@@ -610,6 +629,39 @@ namespace amp
             draw(p.prim, kIdentity, sprites);
             return true;
         }
+        // A drawable's visibility test (0x232b30: its bounding sphere in the camera's space against the selected camera's
+        // six frustum planes at +0x2c0, 0x290f90, the camera at *0x3b0988; then a size cut). Widescreen: the planes
+        // widened for the call as the clip space's x is (x scaled by 3/4 in each plane's normal, renormalised; the
+        // near, far, top and bottom planes have no x), then put back, so the meshes past the 4:3 edges are drawn and
+        // the camera's own planes are untouched.
+        void visible(uint8_t *ram, R5900Context *ctx, Runtime *rt)
+        {
+            const float sx = options::clipScaleX();
+            const uint32_t camera = rd32(ram, 0x3b0988u);
+            if (sx == 1.0f || camera < 0x100000u || camera >= 0x1FFF000u)
+            {
+                func_0x232b30(ram, ctx, rt);
+                return;
+            }
+            uint8_t *planes = ram + ((camera + 0x2c0u) & 0x1FFFFFFu);
+            float kept[6][4], wide[6][4];
+            std::memcpy(kept, planes, sizeof kept);
+            for (int k = 0; k < 6; ++k)
+            {
+                const float *n = kept[k];
+                const float len = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+                const float x = n[0] * sx, lenWide = std::sqrt(x * x + n[1] * n[1] + n[2] * n[2]);
+                const float f = lenWide > 0.0f ? len / lenWide : 1.0f;
+                wide[k][0] = x * f;
+                wide[k][1] = n[1] * f;
+                wide[k][2] = n[2] * f;
+                wide[k][3] = n[3] * f;
+            }
+            std::memcpy(planes, wide, sizeof wide);
+            func_0x232b30(ram, ctx, rt);
+            std::memcpy(ram + ((camera + 0x2c0u) & 0x1FFFFFFu), kept, sizeof kept);
+        }
+
     } // namespace
 
     bool native::program(uint32_t pcBytes, const uint8_t *vuData, uint32_t top, uint32_t &tpc)
@@ -720,5 +772,6 @@ namespace amp
     void installNative(Runtime &, bozo::port::Registry &r)
     {
         r.registerFunction(0x215f30, meshDraw); // the PS2 mesh's draw (AMP_TRACE_MESHES)
+        r.registerFunction(0x232b30, visible);  // a drawable's visibility test (widescreen: the planes widened)
     }
 } // namespace amp

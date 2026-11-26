@@ -7,6 +7,7 @@
 #include "bozo/host/free_host.h"
 #include "bozo/port.h"
 #include "amp_functions.h"
+#include "amp_options.h"
 #include "amp_port.h"
 #include <algorithm>
 #include <cstdio>
@@ -146,6 +147,12 @@ int main(int argc, char **argv)
         options.cardDir = bozo::app::userDirectory().string();
         std::printf("[amp] memory cards in %s\n", options.cardDir.c_str());
     }
+    // The player's options (amplitude.ini in the user folder: widescreen, the images' scale) and the cheats'
+    // switches: the window's game only (a scripted or hidden run takes the environment's switches alone).
+    amp::options::load(window && !windowOptions.hidden && options.padScript.empty() ? bozo::app::userDirectory()
+                                                                                     : std::filesystem::path());
+#else
+    amp::options::load({});
 #endif
     options.realTime = window;
     options.gameTag = "SCUS-97258"; // a save state loads only into Amplitude
@@ -197,50 +204,9 @@ int main(int argc, char **argv)
                     break;
                 p = *next ? next + 1 : next;
             }
-        // AMP_INFINITE_ENERGY=1: the energy meter kept full while a song runs (a float, 15 when full, Game Over at 0, at
-        // +0x4bc of the song's player object *0x3af838; the HUD's copy, 0x43b74c, follows it; found by memory searches
-        // during a song with no input). For play tests: a whole song without input.
-        if (static const bool infinite = std::getenv("AMP_INFINITE_ENERGY") != nullptr; infinite)
-        {
-            uint8_t *ram = d.runtime().memory.ram();
-            uint32_t player;
-            std::memcpy(&player, ram + 0x3af838u, 4);
-            if (player >= 0x100000u && player < 0x1FFF000u)
-            {
-                float energy;
-                std::memcpy(&energy, ram + player + 0x4bcu, 4);
-                if (energy > 0.0f && energy < 15.0f)
-                {
-                    const float full = 15.0f;
-                    std::memcpy(ram + player + 0x4bcu, &full, 4);
-                }
-            }
-        }
-        // AMP_UNLOCK_ALL=1: the game's own unlock-all flag (+0x8c of the game data at *0x440d44, which the arena list
-        // 0x26dd40 checks before the FreQ's progress): every arena and song open without beating the training first
-        // (the game unlocks Neotropolis when Basic Concepts Training is beaten). For play tests.
-        if (static const bool unlockAll = std::getenv("AMP_UNLOCK_ALL") != nullptr; unlockAll)
-        {
-            uint32_t data;
-            std::memcpy(&data, d.runtime().memory.ram() + 0x440d44u, 4);
-            if (data >= 0x100000u && data < 0x2000000u)
-            {
-                const uint32_t one = 1;
-                std::memcpy(d.runtime().memory.ram() + data + 0x8cu, &one, 4);
-            }
-        }
-        // AMP_AUTOPILOT=1: the game's own autopilot cheat (its debug toggle 0x110390 flips +0x100 of the object at
-        // *0x435f14 and prints "CHEAT: autopilot mode"): the game plays the gems itself. For play tests of a whole song.
-        if (static const bool autopilot = std::getenv("AMP_AUTOPILOT") != nullptr; autopilot)
-        {
-            uint32_t cheats;
-            std::memcpy(&cheats, d.runtime().memory.ram() + 0x435f14u, 4);
-            if (cheats >= 0x100000u && cheats < 0x2000000u)
-            {
-                const uint32_t one = 1;
-                std::memcpy(d.runtime().memory.ram() + cheats + 0x100u, &one, 4);
-            }
-        }
+        // The cheats (runtime/amp_options.cpp: AMP_AUTOPILOT, AMP_UNLOCK_ALL, AMP_INFINITE_ENERGY, or the window's
+        // Amplitude tab), applied to the game's memory once a frame.
+        amp::options::applyCheats(d.runtime().memory.ram());
         // AMP_WATCH=<address>[,<address>...]: a word of RAM printed at each frame end where it changed (finding what
         // overwrites a structure).
         if (static const char *watch = std::getenv("AMP_WATCH"); watch)
@@ -345,6 +311,9 @@ int main(int argc, char **argv)
         bozo::app::Game game;
         game.run = run;
         game.stop = [&] { host.requestStop(); };
+        amp::options::setQuit([&] { host.requestStop(); }); // the Amplitude tab's Quit
+        amp::options::registerSettingsTab();
+        bozo::app::setPictureAspect(amp::options::widescreen() ? 16.0f / 9.0f : 0.0f);
         game.framesEnded = [&] { return host.framesEnded(); };
         game.saveState = [&](int slot) { host.requestSave(bozo::app::stateSlotPath(slot)); };
         game.loadState = [&](int slot) { host.requestLoad(bozo::app::stateSlotPath(slot)); };
