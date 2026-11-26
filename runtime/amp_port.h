@@ -21,9 +21,10 @@ namespace amp
     void installNative(Runtime &rt, bozo::port::Registry &registry);
     namespace native
     {
-        // The mark a native mesh pass left in the VIF1 stream in place of its VU1 program (a NOP, NUM 0xa5, IMM
-        // `mark`): the pass is drawn there, in order with the GS packets around it.
-        void pass(uint32_t mark);
+        // A VU1 program's start (MSCAL / MSCNT at `pcBytes`, its batch unpacked from `top` of VU1's data memory) answered
+        // natively (runtime/amp_native.cpp, AMP_NATIVE=1): true when drawn here (the unit's continuation then `tpc`),
+        // false for VU1 to run it.
+        bool program(uint32_t pcBytes, const uint8_t *vuData, uint32_t top, uint32_t &tpc);
         void report();
     }
     bool ipuSite(uint8_t *ram, R5900Context *ctx, Runtime *rt, uint32_t pc);

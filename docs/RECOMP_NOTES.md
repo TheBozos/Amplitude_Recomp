@@ -396,9 +396,23 @@ Now both paths draw them centred; in the training song and on the arena selectio
 (their header not where expected), and the frames match as before (0.12 %, 0.18 % of the pixels apart by more than 32).
 `AMP_TRACE_PARTICLES=<n>`: the n-th particle draw's particles, header and first sprites.
 
-(`0x3a78`, the survey's busiest start before, is image 8's MSCNT: its later batches.) Next: the image-8 passes whose header is not
-where expected, a scene with `0x6c` compared, the other draws (text, movies), and
-`AMP_NATIVE` on by default once a song and the menus match.
+**Where the native drawing is answered now: the VU1 program's start.** The hooks above (`0x2155b0`, `0x2159b0`,
+`0x21a4d0`, `0x219f28`, the flush `0x211128`) left about one pass in 2000 to VU1 from boot to a song (319 headers not
+found, 217 REFs not found, 20 particle draws), all for one reason: the runtime may make guest code leave a port's
+override midway (an event due) and run the rest of the function later, outside the hook, with the chain the hook
+expected cut or sent by someone else. The programs themselves do not have that problem: at MSCAL / MSCNT
+(`startProgram`, `runtime/amp_vu1.cpp`) the VIF has unpacked the batch into VU1's data memory, so `native::program`
+reads the header and the batch where the microcode would (from the start's TOPS), draws them with the code above
+(the colour sub-programs, the depth clip, the line quads and their clip flags, the sprites), and leaves the unit's
+continuation where the program's end would (`0x3a78`, `0x2ff0`, `0x2340`, `0x2a78`). The header is kept from the MSCAL
+for the MSCNT batches, as the microcode keeps it in registers; a multi-mesh's mesh is lit once at its MSCAL and its
+MSCNTs read only their instance blocks. An MSCAL not read here runs on VU1 with its MSCNTs. The chain rewriting, the
+marks and the function hooks are gone. From boot into the training song: 4.2 million batches drawn this way and one
+program start left to VU1 (`0x2840`, MSCAL `0x508`, six pairs at boot); the frames match the GS path as before (the
+training song 0.12 %, the arena selection 0.18 % of the pixels apart by more than 32, at edges).
+
+(`0x3a78`, the survey's busiest start before, is image 8's MSCNT: its later batches.) Next: a scene with `0x6c` compared, the other draws (text, movies, the 2D), and `AMP_NATIVE`
+on by default once the songs, modes and menus match.
 
 ## Where it stands
 

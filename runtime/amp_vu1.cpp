@@ -909,7 +909,8 @@ namespace amp
                 f.itop = f.itops;
                 f.dbf = !f.dbf;
                 f.tops = f.base + (f.dbf ? f.offset : 0);
-                runProgram(pcBytes);
+                if (!native::program(pcBytes, g_vu.mem, f.top, g_vu.tpc))
+                    runProgram(pcBytes);
                 ++e[0];
                 e[1] += g_vu.pairs - before;
                 return;
@@ -935,6 +936,9 @@ namespace amp
             f.itop = f.itops;
             f.dbf = !f.dbf;
             f.tops = f.base + (f.dbf ? f.offset : 0);
+            // The renderer's programs answered natively (runtime/amp_native.cpp): not run on VU1.
+            if (!g_cur->vu0 && native::program(pcBytes, g_vu.mem, f.top, g_vu.tpc))
+                return;
             runProgram(pcBytes);
         }
 
@@ -1135,11 +1139,7 @@ namespace amp
                 if (!g_cur->vu0 && !(imm & 0x8000u))
                     path3::unmasked();
                 break;
-            case 0x00: // NOP; the native renderer's mark (NUM 0xa5): a mesh pass drawn here (runtime/amp_native.cpp)
-                if (((code >> 16) & 0xFFu) == 0xA5u && !g_cur->vu0)
-                    native::pass(imm);
-                break;
-            default: break; // MARK, FLUSHE, FLUSH, FLUSHA
+            default: break; // NOP, MARK, FLUSHE, FLUSH, FLUSHA
             }
         }
 
