@@ -908,6 +908,178 @@ namespace amp
             ++g_made;
         }
 
+        // A particle system's draw (0x219f28, by 0x21a2a8): VU1 program 0x512 draws each particle as a SPRITE. The
+        // header (9 quadwords: vf28-31 the clip matrix, vf25 the colour's scale, the GIF tag, vf26 / vf27 the viewport's
+        // scale and offset, vf24 the corners' offset in clip space), then chunks of up to 162 particles, each flushed
+        // with MSCAL 0x512 (the first) or MSCNT: a count, then each particle's colour (+0x00, floats) and position (+0x20,
+        // w half its size, +0x58 / 2) from the list at +0xf4 (next at +0x68). The corners are the centre in clip space
+        // less and plus vf24 times the half size, both projected with the first corner's 1 / w; a particle with either
+        // corner outside the clip space is dropped; u v 0 to 1 across, F 0.
+        struct Particle
+        {
+            float colour[4], position[4];
+        };
+        struct ParticleDraw
+        {
+            uint32_t self = 0, p0 = 0;
+            bool made = false, skip = false;
+            float h[9][4];
+            uint64_t prim = 0;
+            std::vector<Particle> particles;
+            size_t next = 0; // the first particle of the next chunk
+        } g_particles;
+
+        void particleFlush(const uint8_t *ram, uint8_t *spr)
+        {
+            ParticleDraw &d = g_particles;
+            uint32_t end;
+            std::memcpy(&end, spr + 8, 4);
+            auto word = [&](uint32_t a) {
+                uint32_t v;
+                std::memcpy(&v, spr + (a & 0x3FFCu), 4);
+                return v;
+            };
+            auto leave = [&](uint32_t why) {
+                g_leftWhy.insert(why);
+                ++g_left;
+                d.skip = true;
+            };
+            if (!d.made && !d.skip)
+            {
+                uint32_t head = d.p0;
+                if (word(head + 12) != 0x6c098000u)
+                    head += 16;
+                if (word(head + 12) != 0x6c098000u || head + 16u * 10u > end)
+                    return leave(0xa0000u); // no header where expected
+                for (uint32_t k = 0; k < 9; ++k)
+                    std::memcpy(d.h[k], spr + ((head + 16u + 16u * k) & 0x3FF0u), 16);
+                if (!tagPrim(d.h[5], d.prim))
+                    return leave(0xa0001u);
+                d.made = true;
+            }
+            if (!d.made)
+                return;
+            const uint32_t last = end - 16u, start = word(last);
+            if ((start != 0x14000512u && start != 0x17000000u) || word(last + 4) || word(last + 8) || word(last + 12))
+                return;
+            const size_t n = std::min<size_t>(162, d.particles.size() - d.next);
+            if (!n)
+                return leave(0xa0002u); // more chunks than particles
+            const float (*h)[4] = d.h;
+            static const float kIdentity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+            Pass &p = g_passes[g_nextMark % kPasses];
+            p.prim = (d.prim & ~7ull) | 3u; // drawn as two triangles, as the GS path draws a SPRITE
+            std::memcpy(p.matrix, kIdentity, sizeof kIdentity);
+            p.vertices.clear();
+            for (size_t i = d.next; i < d.next + n; ++i)
+            {
+                const Particle &q = d.particles[i];
+                float c[4], a[4], b[4];
+                for (int r = 0; r < 4; ++r)
+                    c[r] = h[0][r] * q.position[0] + h[1][r] * q.position[1] + h[2][r] * q.position[2] + h[3][r];
+                bool outside = false;
+                for (int r = 0; r < 4; ++r)
+                {
+                    a[r] = c[r] - h[8][r] * q.position[3];
+                    b[r] = c[r] + h[8][r] * q.position[3];
+                }
+                for (const float *k : {a, b})
+                {
+                    const float w = std::fabs(k[3]);
+                    outside |= k[0] > w || k[0] < -w || k[1] > w || k[1] < -w || k[2] > w || k[2] < -w;
+                }
+                if (outside || a[3] == 0.0f)
+                    continue;
+                const float qa = 1.0f / a[3];
+                uint32_t rgba = 0;
+                for (int k = 0; k < 4; ++k)
+                {
+                    const float x = h[4][k] * q.colour[k]; // ftoi0
+                    rgba |= (x <= 0.0f ? 0u : x >= 255.0f ? 255u : static_cast<uint32_t>(x)) << (8 * k);
+                }
+                auto corner = [&](const float *k, float uv) {
+                    Vertex v;
+                    v.x = (h[6][0] * k[0] + h[7][0] * k[3]) * qa;
+                    v.y = (h[6][1] * k[1] + h[7][1] * k[3]) * qa;
+                    v.z = (h[6][2] * k[2] + h[7][2] * k[3]) * qa;
+                    v.u = v.v = uv;
+                    v.q = 1.0f;
+                    v.rgba = rgba;
+                    v.fog = 0.0f;
+                    return v;
+                };
+                const Vertex va = corner(a, 0.0f), vb = corner(b, 1.0f);
+                Vertex tr = va, bl = va;
+                tr.x = vb.x;
+                tr.u = vb.u;
+                bl.y = vb.y;
+                bl.v = vb.v;
+                for (const Vertex &v : {va, tr, vb, va, vb, bl})
+                    p.vertices.push_back(v);
+            }
+            d.next += n;
+            p.mark = g_nextMark & 0xFFFFu;
+            const uint32_t mark = 0x00A50000u | p.mark;
+            std::memcpy(spr + (last & 0x3FF0u), &mark, 4);
+            ++g_nextMark;
+            ++g_made;
+        }
+
+        void particleDraw(uint8_t *ram, R5900Context *ctx, Runtime *rt)
+        {
+            static const bool native = std::getenv("AMP_NATIVE") && std::atoi(std::getenv("AMP_NATIVE")) != 0;
+            if (native)
+            {
+                ParticleDraw &d = g_particles;
+                d.self = ctx->r[4].uw[0];
+                std::memcpy(&d.p0, rt->memory.scratchpad() + 8, 4);
+                d.made = d.skip = false;
+                d.next = 0;
+                d.particles.clear();
+                for (uint32_t q = rd32(ram, d.self + 0xf4); q && d.particles.size() < 100000; q = rd32(ram, q + 0x68))
+                {
+                    Particle pt;
+                    std::memcpy(pt.colour, ram + (q & 0x1FFFFFFu), 16);
+                    std::memcpy(pt.position, ram + ((q + 0x20) & 0x1FFFFFFu), 16);
+                    float size;
+                    std::memcpy(&size, ram + ((q + 0x58) & 0x1FFFFFFu), 4);
+                    pt.position[3] = size * 0.5f; // as the draw writes it into +0x2c
+                    d.particles.push_back(pt);
+                }
+            }
+            // AMP_TRACE_PARTICLES=<n>: the n-th draw's header and first particles (with or without AMP_NATIVE).
+            static const char *trace = std::getenv("AMP_TRACE_PARTICLES");
+            static uint64_t draws = 0;
+            if (trace && ++draws == std::strtoull(trace, nullptr, 10))
+            {
+                const uint32_t self = ctx->r[4].uw[0];
+                std::printf("[amp:particles] draw %llu at flip %llu, system %08x\n", (unsigned long long)draws,
+                            (unsigned long long)gs::flips(), self);
+                int k = 0;
+                for (uint32_t q = rd32(ram, self + 0xf4); q && k < 6; q = rd32(ram, q + 0x68), ++k)
+                {
+                    float c[4], pos[4], size;
+                    std::memcpy(c, ram + (q & 0x1FFFFFFu), 16);
+                    std::memcpy(pos, ram + ((q + 0x20) & 0x1FFFFFFu), 16);
+                    std::memcpy(&size, ram + ((q + 0x58) & 0x1FFFFFFu), 4);
+                    std::printf("[amp:particles]  colour %g %g %g %g position %g %g %g size %g\n", c[0], c[1], c[2], c[3],
+                                pos[0], pos[1], pos[2], size);
+                }
+            }
+            func_0x219f28(ram, ctx, rt);
+            if (trace && draws == std::strtoull(trace, nullptr, 10) && g_particles.made)
+            {
+                for (int k = 0; k < 9; ++k)
+                    std::printf("[amp:particles]  h%d %g %g %g %g\n", k, g_particles.h[k][0], g_particles.h[k][1],
+                                g_particles.h[k][2], g_particles.h[k][3]);
+                const Pass &p = g_passes[(g_nextMark - 1) % kPasses];
+                for (size_t i = 0; i < p.vertices.size() && i < 12; ++i)
+                    std::printf("[amp:particles]  v%zu %.1f %.1f z %.0f uv %g %g rgba %08x\n", i, p.vertices[i].x,
+                                p.vertices[i].y, p.vertices[i].z, p.vertices[i].u, p.vertices[i].v, p.vertices[i].rgba);
+            }
+            g_particles.self = 0;
+        }
+
         // The flush of the scratchpad's packet to the ring (0x211128; it runs the VIF over it at once). In a pass whose
         // packet points at the vertices (0x2155b0 copies that packet into the scratchpad with channel 9, just before),
         // the pass is made native here: the mark before the header and the copied packet made one empty CNT.
@@ -915,6 +1087,8 @@ namespace amp
         {
             if (g_multi.self)
                 multiFlush(ram, rt->memory.scratchpad());
+            else if (g_particles.self)
+                particleFlush(ram, rt->memory.scratchpad());
             else if (g_pointerLines.mesh)
                 pointerLinesFlush(ram, rt->memory.scratchpad());
             else if (g_pointerPass.mesh)
@@ -1002,6 +1176,7 @@ namespace amp
         r.registerFunction(0x2159b0, linePass); // a mesh's line pass (VU1 program 0x5a8)
         r.registerFunction(0x211128, ringFlush); // the scratchpad's packet to the ring
         r.registerFunction(0x21a4d0, multiDraw); // a PsMultiMesh's draw
+        r.registerFunction(0x219f28, particleDraw); // a particle system's draw (VU1 program 0x512)
         r.registerFunction(0x212500, sprTransfer); // a transfer to the scratchpad started
     }
 } // namespace amp

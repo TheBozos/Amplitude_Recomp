@@ -982,7 +982,13 @@ namespace amp::gs
             if (type == 6) // sprite: two corners
             {
                 const uint32_t col = v[1].rgba;
-                const Vertex a = make(v[0], col), b = make(v[1], col);
+                // A sprite's Q is its second vertex's (the GS's sprite takes it, as its colour, from the last vertex):
+                // with each corner's own, the particles' first corner (ST 0, 0, Q 0) was taken as Q 1 against the
+                // second's 1 / w, and their glow texture was drawn bent toward one corner.
+                GsVertex first = v[0];
+                if (!fst)
+                    first.q = v[1].q;
+                const Vertex a = make(first, col), b = make(v[1], col);
                 Vertex tr = a, bl = a;
                 tr.x = b.x; tr.u = b.u;
                 bl.y = b.y; bl.v = b.v;

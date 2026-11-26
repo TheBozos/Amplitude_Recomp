@@ -381,8 +381,23 @@ coordinates, as the GS path draws a LINE (the renderer's own lines are one windo
 than the game's). On the arena selection, where it ran 22 million pairs in 40 frames, no VU1 program but `0x512` runs;
 the frames match as before (0.18 % apart by more than 32; the song 0.13 %).
 
-(`0x3a78`, the survey's busiest start before, is image 8's MSCNT: its later batches.) Next: `0x512` (built at `0x21a124`), a
-scene with `0x6c` compared, and
+A particle system's draw (`0x219f28`, by `0x21a2a8`) is VU1 program `0x512` (`0x2890`): each particle a SPRITE. The
+header is 9 quadwords (vf28-31 the clip matrix, vf25 the colour's scale, the GIF tag, vf26 / vf27 the viewport, vf24 the
+corners' offset in clip space), then chunks of up to 162 particles, each flushed with MSCAL `0x512` or MSCNT: a count
+and each particle's colour (`+0x00`, floats) and position (`+0x20`, w half its size `+0x58`), from the list at `+0xf4`
+(next `+0x68`). The corners are the centre in clip space less and plus vf24 times the half size, both projected with
+the first corner's 1 / w (so a particle keeps its perspective size); a particle with either corner outside the clip
+space is dropped; ST 0, 0 (Q 0) and Q, Q (Q), F 0. Native: the list read when the draw starts, the header at the
+first flush, each chunk's sprites made on the CPU (two triangles in GS coordinates, as the GS path draws a SPRITE) and
+the chunk's MSCAL / MSCNT made the mark. With it the GS path's own sprites were found wrong: a sprite takes its Q from
+its second vertex (as its colour), but the translator gave each corner its own, the particles' first corner Q 1
+against the second's 1 / w, and their glow texture was drawn bent toward one corner (the blasters' glows off-centre).
+Now both paths draw them centred; in the training song and on the arena selection VU1 runs only a few image-8 passes
+(their header not where expected), and the frames match as before (0.12 %, 0.18 % of the pixels apart by more than 32).
+`AMP_TRACE_PARTICLES=<n>`: the n-th particle draw's particles, header and first sprites.
+
+(`0x3a78`, the survey's busiest start before, is image 8's MSCNT: its later batches.) Next: the image-8 passes whose header is not
+where expected, a scene with `0x6c` compared, the other draws (text, movies), and
 `AMP_NATIVE` on by default once a song and the menus match.
 
 ## Where it stands
