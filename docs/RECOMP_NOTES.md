@@ -432,11 +432,17 @@ first frame after a load is a moment apart in the two runs and is left out). Spe
 unpaced (`AMP_UNPACED=1`, the window hidden), twice each: 337 frames a second on the GS path, 353 native (the VU1
 programs were compiled to C++ already; the native path saves their run and the GIF translation of their output).
 
+Two players (Game, Neotropolis) and Remix compared as well: 0.5 % and 0.3-0.45 % of the pixels apart by more than 32,
+at edges (a Remix frame 23 % apart is the two runs a moment apart: the track's beat bar further along). The way there
+is a state saved at Multi's number of players (boot: `6470:START, 6650:DOWN, 6750:CROSS, 6950:CROSS`, state at 7200),
+then, for two players, CROSS at 7220, 7420, 7670, 7870, 8170, 8570, 8970, 9370 and 9770 with `--pad-script2
+build/pad_p2.txt`; for Remix, TRIANGLE at 7220, DOWN at 7450 and 7550, CROSS at 7650, 7850, 8100 and on every 300-400
+frames, with player 2's CROSS at 8150, 8250 and 8500 (the FreQ select waits for both players).
+
 The native renderer is on by default since these comparisons; `AMP_NATIVE=0` gives the GS path back (VU1 runs the
 programs, the translator draws their kicks) for comparing.
 
-(`0x3a78`, the survey's busiest start before, is image 8's MSCNT: its later batches.) Next: the other draws (text, movies, the 2D) from their own functions, and two players and Remix compared (not
-reached by the menus' pad scripts yet).
+(`0x3a78`, the survey's busiest start before, is image 8's MSCNT: its later batches.) Next: the other draws (text, movies, the 2D) from their own functions.
 
 ## Where it stands
 
