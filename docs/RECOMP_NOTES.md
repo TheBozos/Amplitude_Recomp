@@ -426,6 +426,12 @@ came of the arena:
 To reach an arena's song: `AMP_UNLOCK_ALL=1` from boot and the song script's Accepts (`build/pad_song.txt`, then CROSS
 at 11000-11600); pad presses after a state load take the game's frame numbers.
 
+Further modes, from states saved on the GS path: the FreQmaker (0.30 % of the pixels apart by more than 32: a finely
+textured part's texels, sampled a little apart) and four players in Neotropolis (0.48 %: the busy scene's edges; the
+first frame after a load is a moment apart in the two runs and is left out). Speed, 600 frames of the training song
+unpaced (`AMP_UNPACED=1`, the window hidden), twice each: 337 frames a second on the GS path, 353 native (the VU1
+programs were compiled to C++ already; the native path saves their run and the GIF translation of their output).
+
 (`0x3a78`, the survey's busiest start before, is image 8's MSCNT: its later batches.) Next: the other draws (text, movies, the 2D), more modes compared (two to four players, Remix, the FreQmaker), and
 `AMP_NATIVE` on by default once they match.
 
