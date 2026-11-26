@@ -81,32 +81,14 @@ namespace amp
             func_0x215f30(ram, ctx, rt);
         }
 
-        // The mesh's prebuilt packet (0x214150), VIF1 codes as the REF gives them, read as VU1 would take them: each
-        // batch's UNPACKs into its memory (TOPS taken as 0), then at its MSCAL / MSCNT the batch: the counts at 0x15
-        // (vertices, faces), the vertices from 0x16 (4 quadwords each: STCYCL 4 / 2 for the position and normal, 4 / 1
-        // for the colour and u v), the faces after them (V3-16: each vertex's quadword offset). `out`: three vertices a
-        // face, 16 floats each. False for a code not in such packets. `batchAtEnd`: the codes stop before the batch's
-        // MSCAL (a multi-mesh's upload of its mesh's first batch, 0x2161b0): the batch is taken at their end.
-        bool decodeCodes(const uint8_t *d, uint32_t bytes, std::vector<std::array<float, 16>> &out, bool batchAtEnd = false)
+        // A prebuilt packet's VIF1 codes read as VU1 would take them: each batch's UNPACKs into its memory (TOPS taken as
+        // 0), then at its MSCAL / MSCNT the batch, handed to `onBatch` with that memory. False for a code not in such
+        // packets, or when `onBatch` refuses its batch. `batchAtEnd`: the codes stop before the batch's MSCAL (a
+        // multi-mesh's upload of its mesh's first batch, 0x2161b0): the batch is taken at their end.
+        using Memory = uint32_t (*)[4];
+        template <class OnBatch> bool decodeVif(const uint8_t *d, uint32_t bytes, OnBatch &&onBatch, bool batchAtEnd = false)
         {
             static uint32_t mem[1024][4];
-            out.clear();
-            auto batch = [&]() {
-                const uint32_t vertices = mem[0x15][0], faces = mem[0x15][1];
-                if (vertices > 250u || 0x16u + 4u * vertices + faces > 1024u)
-                    return false;
-                for (uint32_t f = 0; f < faces; ++f)
-                    for (uint32_t k = 0; k < 3; ++k)
-                    {
-                        const uint32_t offset = mem[0x16u + 4u * vertices + f][k] & 0xFFFFu;
-                        if (offset / 4u >= vertices)
-                            return false;
-                        std::array<float, 16> v;
-                        std::memcpy(v.data(), mem[0x16u + offset], 64);
-                        out.push_back(v);
-                    }
-                return true;
-            };
             uint32_t cl = 1, wl = 1;
             for (uint32_t at = 0; at + 4 <= bytes;)
             {
@@ -157,14 +139,41 @@ namespace amp
                 case 0x20: at += 4; break;             // STMASK
                 case 0x30: case 0x31: at += 16; break; // STROW, STCOL
                 case 0x14: case 0x15: case 0x17:       // MSCAL, MSCALF, MSCNT: the batch
-                    if (!batch())
+                    if (!onBatch(Memory(mem)))
                         return false;
                     break;
                 default:
                     return false;
                 }
             }
-            return !batchAtEnd || batch();
+            return !batchAtEnd || onBatch(Memory(mem));
+        }
+
+        // A triangle batch (0x214150's packets, image 8 and 0x3dc): the counts at 0x15 (vertices, faces), the vertices
+        // from 0x16 (4 quadwords each: STCYCL 4 / 2 for the position and normal, 4 / 1 for the colour and u v), the
+        // faces after them (V3-16: each vertex's quadword offset). `out`: three vertices a face, 16 floats each.
+        bool decodeCodes(const uint8_t *d, uint32_t bytes, std::vector<std::array<float, 16>> &out, bool batchAtEnd = false)
+        {
+            out.clear();
+            return decodeVif(
+                d, bytes,
+                [&](Memory mem) {
+                    const uint32_t vertices = mem[0x15][0], faces = mem[0x15][1];
+                    if (vertices > 250u || 0x16u + 4u * vertices + faces > 1024u)
+                        return false;
+                    for (uint32_t f = 0; f < faces; ++f)
+                        for (uint32_t k = 0; k < 3; ++k)
+                        {
+                            const uint32_t offset = mem[0x16u + 4u * vertices + f][k] & 0xFFFFu;
+                            if (offset / 4u >= vertices)
+                                return false;
+                            std::array<float, 16> v;
+                            std::memcpy(v.data(), mem[0x16u + offset], 64);
+                            out.push_back(v);
+                        }
+                    return true;
+                },
+                batchAtEnd);
         }
 
         // A packet in RAM, VIF codes all through (the REF of a pass whose packet copies the vertices).
@@ -176,12 +185,10 @@ namespace amp
         }
 
         // A packet that points at the vertices, as copied into the scratchpad (`qwc` quadwords from `start`): a DMA chain
-        // of CNT tags (VIF codes after the tag) and REFs (each vertex's 4 quadwords, from the mesh's +0xe8, as they
-        // are now), its VIF codes gathered in order (TTE off: the tags' upper halves are not codes), then read as above.
-        bool decodeChain(const uint8_t *ram, const uint8_t *spr, uint32_t start, uint32_t qwc, std::vector<std::array<float, 16>> &out,
-                         bool batchAtEnd = false)
+        // of CNT tags (VIF codes after the tag) and REFs (each vertex's quadwords, from the mesh's +0xe8, as they are
+        // now), its VIF codes gathered in order (TTE off: the tags' upper halves are not codes).
+        bool gatherChain(const uint8_t *ram, const uint8_t *spr, uint32_t start, uint32_t qwc, std::vector<uint8_t> &codes)
         {
-            static std::vector<uint8_t> codes;
             codes.clear();
             for (uint32_t q = 0; q < qwc;)
             {
@@ -212,7 +219,66 @@ namespace amp
                 else
                     return false;
             }
-            return decodeCodes(codes.data(), static_cast<uint32_t>(codes.size()), out, batchAtEnd);
+            return true;
+        }
+
+        // A triangle packet copied into the scratchpad, read as above.
+        bool decodeChain(const uint8_t *ram, const uint8_t *spr, uint32_t start, uint32_t qwc, std::vector<std::array<float, 16>> &out,
+                         bool batchAtEnd = false)
+        {
+            static std::vector<uint8_t> codes;
+            return gatherChain(ram, spr, start, qwc, codes) &&
+                   decodeCodes(codes.data(), static_cast<uint32_t>(codes.size()), out, batchAtEnd);
+        }
+
+        // A line batch (0x214710's packets, VU1 program 0x5a8: a mesh's line pass, 0x2159b0): the counts at 8 (vertices,
+        // lines), the positions from 9 (2 quadwords a vertex: the position, then the program's output), the lines
+        // after them (V2-16: each end's quadword offset). Each position is transformed by the clip matrix `clip`
+        // (columns) and tested against -w..w on x, y, z; a vertex's flags are its test's and the vertex's before it (the
+        // clip flags as FCGET gives them, two tests); a line is drawn only if both ends' flags are clear, a batch not at
+        // all if every vertex's flags share a bit. `out`: two positions a line (16 floats each, the position first).
+        bool decodeLines(const uint8_t *d, uint32_t bytes, const float (*clip)[4], std::vector<std::array<float, 16>> &out)
+        {
+            out.clear();
+            static std::vector<uint32_t> flags;
+            return decodeVif(d, bytes, [&](Memory mem) {
+                const uint32_t vertices = mem[8][0], lines = mem[8][1];
+                if (vertices > 500u || 9u + 2u * vertices + lines > 1024u)
+                    return false;
+                flags.resize(vertices);
+                uint32_t previous = 0, all = 0xFFFu;
+                for (uint32_t k = 0; k < vertices; ++k)
+                {
+                    float p[4];
+                    std::memcpy(p, mem[9u + 2u * k], 16);
+                    float c[4];
+                    for (int r = 0; r < 4; ++r)
+                        c[r] = clip[0][r] * p[0] + clip[1][r] * p[1] + clip[2][r] * p[2] + clip[3][r];
+                    const float w = std::fabs(c[3]);
+                    const uint32_t test = (c[0] > w ? 1u : 0u) | (c[0] < -w ? 2u : 0u) | (c[1] > w ? 4u : 0u) |
+                                          (c[1] < -w ? 8u : 0u) | (c[2] > w ? 16u : 0u) | (c[2] < -w ? 32u : 0u);
+                    flags[k] = test | (previous << 6);
+                    previous = test;
+                    all &= flags[k];
+                }
+                if (all)
+                    return true; // the batch not drawn
+                for (uint32_t l = 0; l < lines; ++l)
+                {
+                    const uint32_t a = (mem[9u + 2u * vertices + l][0] & 0xFFFFu) / 2u, b = (mem[9u + 2u * vertices + l][1] & 0xFFFFu) / 2u;
+                    if (a >= vertices || b >= vertices)
+                        return false;
+                    if (flags[a] | flags[b])
+                        continue;
+                    for (const uint32_t k : {a, b})
+                    {
+                        std::array<float, 16> v{};
+                        std::memcpy(v.data(), mem[9u + 2u * k], 16);
+                        out.push_back(v);
+                    }
+                }
+                return true;
+            });
         }
 
         // The triangles cut to the clip space's depth, -w <= z <= w, as VU1's clipper cuts them (its x and y guard band
@@ -666,6 +732,182 @@ namespace amp
             g_multi.self = 0;
         }
 
+        // A mesh's line pass (0x2159b0, from the mesh's draw 0x215f30: a0 the mesh): VU1 program 0x5a8 draws the
+        // packet at the geometry's +0x168 (0x214710: its lines, pairs of u16 at +0x108, over the vertices; +0x16e
+        // quadwords) with an 8-quadword header: vf28-31 the clip matrix, the GIF tag, vf26 / vf27 the viewport's scale
+        // and offset (w: the fog's, fog = vf26.w * w + vf27.w, 0-255), vf25 the lines' one colour (RGBA as integers,
+        // the CPU's 255ths and 128ths). As the mesh pass: the packet's REF emptied and the mark before the header, or
+        // for a packet that points at the vertices, taken at its flush.
+        bool makeLines(const uint8_t *codes, uint32_t bytes, const float (*h)[4], Pass &p)
+        {
+            if (!tagPrim(h[4], p.prim))
+                return false;
+            static std::vector<std::array<float, 16>> raw;
+            if (!decodeLines(codes, bytes, &h[0], raw))
+                return false;
+            // Each line as the GS path draws a LINE: a quad one GS pixel tall, from the ends projected here (every end
+            // kept is inside the clip space: w > 0), drawn as triangles with an identity matrix (GS coordinates and Z).
+            float m[16];
+            toScreen(&h[0], h[5], h[6], m);
+            static const float kIdentity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+            std::memcpy(p.matrix, kIdentity, sizeof kIdentity);
+            p.prim = (p.prim & ~7ull) | 3u;
+            uint32_t c[4];
+            std::memcpy(c, h[7], 16);
+            const uint32_t rgba = (c[0] & 0xFFu) | (c[1] & 0xFFu) << 8 | (c[2] & 0xFFu) << 16 | (c[3] & 0xFFu) << 24;
+            auto end = [&](const std::array<float, 16> &q) {
+                Vertex v;
+                const float x = q[0], y = q[1], z = q[2];
+                const float w = m[3] * x + m[7] * y + m[11] * z + m[15];
+                v.x = (m[0] * x + m[4] * y + m[8] * z + m[12]) / w;
+                v.y = (m[1] * x + m[5] * y + m[9] * z + m[13]) / w;
+                v.z = (m[2] * x + m[6] * y + m[10] * z + m[14]) / w;
+                v.rgba = rgba;
+                v.u = v.v = 0.0f;
+                v.q = 1.0f;
+                const float cw = h[0][3] * x + h[1][3] * y + h[2][3] * z + h[3][3];
+                v.fog = float(static_cast<uint32_t>(std::clamp(h[5][3] * cw + h[6][3], 0.0f, 255.0f))) * (1.0f / 255.0f);
+                return v;
+            };
+            p.vertices.clear();
+            for (size_t i = 0; i + 1 < raw.size(); i += 2)
+            {
+                const Vertex a = end(raw[i]), b = end(raw[i + 1]);
+                Vertex a2 = a, b2 = b;
+                a2.y += 1.0f;
+                b2.y += 1.0f;
+                for (const Vertex &v : {a, b, b2, a, b2, a2})
+                    p.vertices.push_back(v);
+            }
+            return true;
+        }
+
+        // A line pass made from its header at `head` and the packet's codes, the mark written at `markAt`.
+        bool markLines(uint8_t *spr, uint32_t head, const uint8_t *codes, uint32_t bytes, uint32_t markAt)
+        {
+            float h[8][4];
+            for (uint32_t k = 0; k < 8; ++k)
+                std::memcpy(h[k], spr + ((head + 16u + 16u * k) & 0x3FF0u), 16);
+            Pass &p = g_passes[g_nextMark % kPasses];
+            if (!makeLines(codes, bytes, h, p))
+            {
+                g_leftWhy.insert(0x90000u); // a line pass not read
+                ++g_left;
+                return false;
+            }
+            p.mark = g_nextMark & 0xFFFFu;
+            const uint32_t mark = 0x00A50000u | p.mark;
+            std::memcpy(spr + (markAt & 0x3FFCu), &mark, 4);
+            ++g_nextMark;
+            ++g_made;
+            return true;
+        }
+
+        // A line pass whose packet points at the vertices, under way: taken at the flush.
+        struct PointerLines
+        {
+            uint32_t mesh = 0, p0 = 0;
+        } g_pointerLines;
+
+        void linePass(uint8_t *ram, R5900Context *ctx, Runtime *rt)
+        {
+            static const bool native = std::getenv("AMP_NATIVE") && std::atoi(std::getenv("AMP_NATIVE")) != 0;
+            uint8_t *spr = rt->memory.scratchpad();
+            uint32_t p0;
+            std::memcpy(&p0, spr + 8, 4);
+            const uint32_t self = ctx->r[4].uw[0], geometry = rd32(ram, self + 0x140);
+            const bool pointer = rd32(ram, geometry + 0x154) != 0;
+            if (native && pointer)
+                g_pointerLines = {self, p0};
+            func_0x2159b0(ram, ctx, rt);
+            g_pointerLines = {};
+            if (!native || pointer)
+                return;
+            uint32_t p1;
+            std::memcpy(&p1, spr + 8, 4);
+            if (p1 <= p0 || p1 - p0 > 0x1000u)
+                return;
+            auto word = [&](uint32_t a) {
+                uint32_t v;
+                std::memcpy(&v, spr + (a & 0x3FFCu), 4);
+                return v;
+            };
+            uint32_t head = p0;
+            if (word(head + 12) != 0x6c088000u)
+                head += 16;
+            if (word(head + 12) != 0x6c088000u || word(head) != 0 || head + 16u * 9u > p1)
+            {
+                g_leftWhy.insert(0x90001u); // no line header where expected
+                ++g_left;
+                return;
+            }
+            const uint32_t qwc = rd32(ram, geometry + 0x16e) & 0xFFFFu;
+            uint32_t ref = 0;
+            for (uint32_t a = head + 16u * 9u; a + 16 <= p1; a += 16)
+                if (((word(a) >> 28) & 7u) == 3u && (word(a) & 0xFFFFu) == qwc)
+                {
+                    ref = a;
+                    break;
+                }
+            const uint32_t packet = ref ? word(ref + 4) & 0x1FFFFF0u : 0;
+            if (!ref || packet + 16u * qwc > 0x2000000u)
+            {
+                g_leftWhy.insert(0x90002u); // no REF of the line packet
+                ++g_left;
+                return;
+            }
+            if (!markLines(spr, head, ram + packet, 16u * qwc, head))
+                return;
+            const uint32_t emptied = word(ref) & ~0xFFFFu;
+            std::memcpy(spr + (ref & 0x3FF0u), &emptied, 4);
+        }
+
+        // At the flush in a line pass whose packet points at the vertices (copied into the scratchpad just before):
+        // the copy read, made one CNT of NOPs with the mark first.
+        void pointerLinesFlush(const uint8_t *ram, uint8_t *spr)
+        {
+            const PointerLines pl = g_pointerLines;
+            g_pointerLines = {};
+            uint32_t end;
+            std::memcpy(&end, spr + 8, 4);
+            const uint32_t geometry = rd32(ram, pl.mesh + 0x140), qwc = rd32(ram, geometry + 0x16e) & 0xFFFFu;
+            const uint32_t start = end - 16u * qwc;
+            auto word = [&](uint32_t a) {
+                uint32_t v;
+                std::memcpy(&v, spr + (a & 0x3FFCu), 4);
+                return v;
+            };
+            uint32_t head = pl.p0;
+            if (word(head + 12) != 0x6c088000u)
+                head += 16;
+            static std::vector<uint8_t> codes;
+            if (qwc < 2 || word(head + 12) != 0x6c088000u || (start & 0x3FF0u) + 16u * qwc > 0x4000u ||
+                !gatherChain(ram, spr, start, qwc, codes))
+            {
+                g_leftWhy.insert(0x90003u); // a line packet pointing at the vertices not taken
+                ++g_left;
+                return;
+            }
+            float h[8][4];
+            for (uint32_t k = 0; k < 8; ++k)
+                std::memcpy(h[k], spr + ((head + 16u + 16u * k) & 0x3FF0u), 16);
+            Pass &p = g_passes[g_nextMark % kPasses];
+            if (!makeLines(codes.data(), static_cast<uint32_t>(codes.size()), h, p))
+            {
+                g_leftWhy.insert(0x90004u);
+                ++g_left;
+                return;
+            }
+            std::memset(spr + (start & 0x3FF0u), 0, 16u * qwc);
+            const uint32_t cnt = 0x10000000u | (qwc - 1u);
+            std::memcpy(spr + (start & 0x3FF0u), &cnt, 4);
+            p.mark = g_nextMark & 0xFFFFu;
+            const uint32_t mark = 0x00A50000u | p.mark;
+            std::memcpy(spr + ((start + 16u) & 0x3FF0u), &mark, 4);
+            ++g_nextMark;
+            ++g_made;
+        }
+
         // The flush of the scratchpad's packet to the ring (0x211128; it runs the VIF over it at once). In a pass whose
         // packet points at the vertices (0x2155b0 copies that packet into the scratchpad with channel 9, just before),
         // the pass is made native here: the mark before the header and the copied packet made one empty CNT.
@@ -673,6 +915,8 @@ namespace amp
         {
             if (g_multi.self)
                 multiFlush(ram, rt->memory.scratchpad());
+            else if (g_pointerLines.mesh)
+                pointerLinesFlush(ram, rt->memory.scratchpad());
             else if (g_pointerPass.mesh)
             {
                 const PointerPass pp = g_pointerPass;
@@ -755,6 +999,7 @@ namespace amp
     {
         r.registerFunction(0x215f30, meshDraw); // the PS2 mesh's draw
         r.registerFunction(0x2155b0, meshPass); // a mesh pass's VU1 header and packet
+        r.registerFunction(0x2159b0, linePass); // a mesh's line pass (VU1 program 0x5a8)
         r.registerFunction(0x211128, ringFlush); // the scratchpad's packet to the ring
         r.registerFunction(0x21a4d0, multiDraw); // a PsMultiMesh's draw
         r.registerFunction(0x212500, sprTransfer); // a transfer to the scratchpad started

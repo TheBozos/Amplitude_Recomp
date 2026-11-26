@@ -370,7 +370,18 @@ chunk's MSCAL / MSCNT becomes the mark. In the training song no VU1 program `0x3
 `0x512`, built at `0x21a124`) and `0x2d40` / `0x2ff0` (MSCAL `0x5a8`, the second packet builder `0x214710`: the
 packet `+0x168`, the faces `+0x108`); on the arena selection `0x2d40` / `0x2ff0` run 22 million pairs in 40 frames.
 
-(`0x3a78`, the survey's busiest start before, is image 8's MSCNT: its later batches.) Next: `0x5a8`, then `0x512`, a
+A mesh's line pass (`0x2159b0`, from the mesh's draw) is VU1 program `0x5a8` (`0x2d40`, MSCNT `0x2ff0`): the
+packet at `+0x168` (`0x214710`: the lines, pairs of u16 at `+0x108`; `+0x16e` quadwords) with an 8-quadword header
+(vf28-31 the clip matrix, the GIF tag, vf26 / vf27 the viewport with the fog's terms in w, vf25 one colour as integers).
+A batch: the counts at 8 (vertices, lines), the positions from 9 (two quadwords a vertex), the lines after them
+(V2-16). The program does not clip a line: it drops it when either end's clip flags (that test and the one before it,
+as FCGET gives them) are set, and drops a batch whose vertices all share a flag. Native: as the mesh pass (the REF
+emptied or the pointer packet's copy made a CNT of NOPs, the mark), each kept line a quad one GS pixel tall in GS
+coordinates, as the GS path draws a LINE (the renderer's own lines are one window pixel at any resolution: thinner
+than the game's). On the arena selection, where it ran 22 million pairs in 40 frames, no VU1 program but `0x512` runs;
+the frames match as before (0.18 % apart by more than 32; the song 0.13 %).
+
+(`0x3a78`, the survey's busiest start before, is image 8's MSCNT: its later batches.) Next: `0x512` (built at `0x21a124`), a
 scene with `0x6c` compared, and
 `AMP_NATIVE` on by default once a song and the menus match.
 
