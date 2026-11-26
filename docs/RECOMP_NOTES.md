@@ -448,7 +448,17 @@ in a song frame and 2 on the arena selection, all untextured sprites: clears of 
 `0xe8` / `0xf3` (render-to-texture images) and the like. They come from the camera's and the renderer's own methods
 (PsCam `0x2128f0`, the renderer's vtable `0x3d2848`); the GIF tags of every packet go through one helper, `0x2121b0`,
 whose other callers are the materials' texture uploads (`0x213698` -> `0x213af0` -> `0x218fe0` -> `0x2176xx`-`0x217be0`)
-and PsMovie's draw (`0x37ced0`). The movies' pictures are image transfers into the frame (the backdrop). Next: input and sound timing, the title's sound.
+and PsMovie's draw (`0x37ced0`). The movies' pictures are image transfers into the frame (the backdrop). **Sound timing (in progress).** The port's sound reaches the speakers about 55-60 ms after the game mixed it: BozoEngine's
+queue target (32 ms) and SDL's device buffer (512 frames, 10.7 ms), Windows' own mixer, and half a game frame on average
+(the mix is pushed once a frame). The game knows of a lag: the config's `synth` section has `lag_ms` 25 (the compiled
+DTA `gen/freq2_config.txt.bin`: a value follows its symbol, `volume_smoothing` 0.8, `lag_ms` 0x19), read by
+SynthPS2's set-up `0x24d2e0` into the synth (`0x64fc50` in a run) at `+0x54` (getter `0x24d2d8`, vtable `0x3d4268`
+slot 13). But only the menu music's transitions read it (`0x197224`, `0x197334`: TransitionMusic.cpp's LagRamp, which
+reads its own `lag_ms` too): up to a song, the gameplay never asks for it. So the gems and the hits are judged on the
+game's clock with no lag allowed for, and what is heard comes 55-60 ms after. `ClockSyncTask` (`0x25c660`-`0x25c728`,
+vtable `0x3d499c`) is the online play's clock sync (the player's name, the network objects at `0x3b0af0`), not the
+sound's. Next: the song's clock (what the gems and the judgement read), to give it the output's lag, or an offset the
+player sets.
 **Widescreen and the player's options** (`runtime/amp_options.*`, the window's Amplitude tab
 `runtime/app/amp_settings_ui.cpp`). The camera is PsCam (`0x2128f0`, vtable `0x3d2950` slot 3, the camera selected at
 `*0x3b0988`): it builds the view-projection `0x43c200` from its projection (`+0x160`) and world (`+0x120`), and
