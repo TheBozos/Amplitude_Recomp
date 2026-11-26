@@ -432,8 +432,11 @@ first frame after a load is a moment apart in the two runs and is left out). Spe
 unpaced (`AMP_UNPACED=1`, the window hidden), twice each: 337 frames a second on the GS path, 353 native (the VU1
 programs were compiled to C++ already; the native path saves their run and the GIF translation of their output).
 
-(`0x3a78`, the survey's busiest start before, is image 8's MSCNT: its later batches.) Next: the other draws (text, movies, the 2D), more modes compared (two to four players, Remix, the FreQmaker), and
-`AMP_NATIVE` on by default once they match.
+The native renderer is on by default since these comparisons; `AMP_NATIVE=0` gives the GS path back (VU1 runs the
+programs, the translator draws their kicks) for comparing.
+
+(`0x3a78`, the survey's busiest start before, is image 8's MSCNT: its later batches.) Next: the other draws (text, movies, the 2D) from their own functions, and two players and Remix compared (not
+reached by the menus' pad scripts yet).
 
 ## Where it stands
 

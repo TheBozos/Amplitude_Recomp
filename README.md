@@ -54,7 +54,8 @@ with its sound, the track's surface and the HUD's monitor drawn by render-to-tex
 | Memory-card saves (the FreQs and the progress, in `%APPDATA%\Amplitude_Recomp`, or a `user` folder next to the executable) | ✅ |
 | Every arena's songs, two players (Multiplayer, Game) | ✅ |
 | Four players (multitap), Duel, Remix, Practice, Freestyle; Options, Credits | ✅ |
-| Native draws (the renderer answered at its own functions, not through VIF1 / GS packets) | ⏳ |
+| Native 3D: the VU1 programs' meshes, lines, multi-meshes and particles drawn with their own matrices (no VU1 microcode run) | ✅ |
+| Native 2D: text, movies and the HUD from their own functions (they go through the GS translator for now) | ⏳ |
 | Linux build | ⏳ |
 
 ✅ works · 🔧 in progress · ⏳ not reached yet
@@ -97,11 +98,14 @@ disc files (game/) ──► scripts/symbols.sh ──► recomp/amp_symbols.txt
 - `SCUS_972.58` is a stripped GCC build using Sony SDK 2.6 libraries. BozoEngine discovers the functions from the code
   itself; `bozo_symbolmap.py` names the SDK functions by matching them against executables that keep their symbols.
 - Game data lives in `GEN/MAIN.ARK`, a Harmonix ARK archive; each song is a multitrack stream in `AUDIO/*.STR`.
-- Drawing (bring-up path): Harmonix's renderer sends its packets through a DMA ring (MFIFO) to VIF1 and the VU1. The
-  port answers every DMA register access of the renderer natively, runs the VIF1 codes and the VU1 programs (compiled
-  to C++ from the executable at build time by `tools/amp_vu1_recomp.py`), and draws the resulting GS packets with
-  BozoEngine's renderer, off-screen buffers as render targets (the GS translator and the VU1 compiler come from
-  Shinobido_WOTN_Recomp).
+- Drawing: Harmonix's renderer sends its packets through a DMA ring (MFIFO) to VIF1 and the VU1. The port answers
+  every DMA register access of the renderer natively and runs the VIF1 codes. Where a VU1 program would start, the
+  native renderer (`runtime/amp_native.cpp`) reads the batch the VIF unpacked and draws it with BozoEngine's 3D path:
+  the meshes' triangles lit as the game's microcode lights them, with the camera's matrix, its lines, multi-meshes
+  and particles. The 2D the game sends as GS packets (text, movies, the HUD) is drawn by the GS translator, off-screen
+  buffers as render targets. `AMP_NATIVE=0` runs the VU1 programs instead (compiled to C++ from the executable at
+  build time by `tools/amp_vu1_recomp.py`) and draws what they kick through the translator: the reference the native
+  renderer is compared with (the GS translator and the VU1 compiler come from Shinobido_WOTN_Recomp).
 - The intro movie is decoded by BozoEngine's native libmpeg (FFmpeg); the menus' animated textures (`ipum` streams the
   game plays on the IPU) by FFmpeg's IPU decoder.
 - Sound: Sony's LIBSD, SDRDRV, SCRTCHPD and Harmonix's SYNTH_S and SOFTFX_S are compiled offline from the disc to C++

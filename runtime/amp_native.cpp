@@ -614,7 +614,8 @@ namespace amp
 
     bool native::program(uint32_t pcBytes, const uint8_t *vuData, uint32_t top, uint32_t &tpc)
     {
-        static const bool on = std::getenv("AMP_NATIVE") && std::atoi(std::getenv("AMP_NATIVE")) != 0;
+        // On unless AMP_NATIVE=0 (the GS path: VU1 runs the programs and the GS translator draws what they kick).
+        static const bool on = !std::getenv("AMP_NATIVE") || std::atoi(std::getenv("AMP_NATIVE")) != 0;
         if (!on)
             return false;
         // AMP_NATIVE_OFF=<MSCAL start>[,...] (hex, e.g. 31f0,2d40): those programs left to VU1, their MSCNTs too.

@@ -22,7 +22,7 @@ namespace amp
     namespace native
     {
         // A VU1 program's start (MSCAL / MSCNT at `pcBytes`, its batch unpacked from `top` of VU1's data memory) answered
-        // natively (runtime/amp_native.cpp, AMP_NATIVE=1): true when drawn here (the unit's continuation then `tpc`),
+        // natively (runtime/amp_native.cpp; AMP_NATIVE=0 leaves them all to VU1): true when drawn here (the unit's continuation then `tpc`),
         // false for VU1 to run it.
         bool program(uint32_t pcBytes, const uint8_t *vuData, uint32_t top, uint32_t &tpc);
         void report();
