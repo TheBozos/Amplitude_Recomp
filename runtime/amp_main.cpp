@@ -348,7 +348,12 @@ int main(int argc, char **argv)
         game.framesEnded = [&] { return host.framesEnded(); };
         game.saveState = [&](int slot) { host.requestSave(bozo::app::stateSlotPath(slot)); };
         game.loadState = [&](int slot) { host.requestLoad(bozo::app::stateSlotPath(slot)); };
-        host.onStateMessage = [](bool, const std::string &message) { bozo::app::notify(message); };
+        // On the screen, and in the log (a load refused at startup says why there too).
+        host.onStateMessage = [](bool, const std::string &message)
+        {
+            std::fprintf(stderr, "[state] %s\n", message.c_str());
+            bozo::app::notify(message);
+        };
         result = bozo::app::runWindow(windowOptions, game, &devices);
     }
     else

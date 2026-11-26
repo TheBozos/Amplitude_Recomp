@@ -165,27 +165,26 @@ namespace amp
     // Amplitude's save-state section: what the engine's own sections do not hold, the sound modules' IOP host (its
     // memory, tasks, RPC servers, libsd and the mixer). Without it a loaded state kept the IOP as it was: silent, and
     // the RPC servers the modules registered gone, so the next sceSdRemote went unanswered (a movie played after a
-    // load waited for its sound for ever). The game sends its textures and VIF state again each frame, but its VU
-    // microcode only once at boot: a load puts it back from the EE's RAM (vif::restoreBootMicrocode).
+    // load waited for its sound for ever). The port's renderer state follows in a section of its own (its DMA ring, VIF,
+    // the VUs with the microcode the game sends only once at boot, the GS, the IPU).
     void installState(bozo::state::Sections &sections)
     {
         sections.add({"amp",
                       [](bozo::state::Archive &a)
                       {
                           sound->serialize(a);
-                          // The port's own state, nested (a state written before it has none: only the boot's VU
-                          // microcode is put back then, and such a state does not run on).
-                          if (!a.loading() || a.sectionLeft() > 0)
-                          {
-                              a.begin("port");
-                              serializeRender(a);
-                              serializeVu(a);
-                              serializeGs(a);
-                              serializeIpu(a);
-                              a.end();
-                          }
-                          else
-                              vif::restoreBootMicrocode();
+                          // The port's own state, nested. A state written before the port saved it has none and is
+                          // refused: its DMA ring, VIF, VU1 and GS were never saved, and loaded
+                          // anyway the game stopped a few frames on (a load in the window is put back as it was).
+                          if (a.loading() && a.sectionLeft() == 0)
+                              throw bozo::state::Error("save state: written by an older build, without the renderer's "
+                                                       "state; it cannot run on (save it again with this build)");
+                          a.begin("port");
+                          serializeRender(a);
+                          serializeVu(a);
+                          serializeGs(a);
+                          serializeIpu(a);
+                          a.end();
                       },
                       [] { return sound ? sound->unsaveable() : std::string(); }});
     }

@@ -98,9 +98,6 @@ namespace amp
         void report();
         uint64_t vu1Pairs();
         uint64_t vu1Programs();
-        // After a save state's load: the microcode the game sent to VU1 and VU0 once at boot, read again from the EE's
-        // RAM (a state does not hold the units' code memories, and the game never sends it again).
-        void restoreBootMicrocode();
         // The EE's RAM: where VIF data comes from, for the VU1 survey.
         inline const uint8_t *eeRam = nullptr;
     }

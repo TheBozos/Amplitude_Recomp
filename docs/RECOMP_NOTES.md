@@ -221,8 +221,10 @@ interpreter runs them all).
   the game waited for ever. They are now nested in the `amp` section (`serializeRender`, `serializeVu`, `serializeGs`,
   `serializeIpu`); what is derived from them (decoded textures, render-to-texture images, the frame's batches) starts
   again after a load. Checked in a song and in the FreQmaker: the game runs on, the picture and the sound as in an
-  unbroken run. A state written before this has none of it: it loads (the boot's microcode is put back from the EE's
-  RAM) but does not run on.
+  unbroken run. A state written before this has none of it and is refused, with the reason on the screen and in the
+  log ("written by an older build"); the game is put back as it was. Loaded anyway, it stopped a few frames on, and
+  rebuilding the ring's registers from the game's set-up (`0x210bb8`, the renderer at `0x43ba00`) was not enough: the
+  VIF, VU1 and GS state are missing too. Pad scripts after a load count the game's frames, as the state left them.
 
 ## IPU pictures: the animated textures
 

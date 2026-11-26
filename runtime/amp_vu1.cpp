@@ -1337,41 +1337,6 @@ namespace amp
 
     uint8_t *vu0::codeMemory() { return reinterpret_cast<uint8_t *>(g_vu0.micro); }
 
-    void vif::restoreBootMicrocode()
-    {
-        if (!eeRam)
-            return;
-        // VU1: the boot's MPG uploads (micro pair, pairs, EE address), as tools/amp_vu1_recomp.py lists them.
-        static const uint32_t kUploads[][3] = {
-            {0x06c, 256, 0x3ad578}, {0x16c, 147, 0x3add80}, {0x260, 205, 0x3acf08}, {0x373, 48, 0x3acd80},
-            {0x3d7, 2, 0x3acd68},   {0x3dc, 167, 0x3ac828}, {0x508, 6, 0x3ac7f0},   {0x512, 63, 0x3ac5f0},
-            {0x5a8, 88, 0x3ac328},  {0x63e, 256, 0x3ab980}, {0x73e, 51, 0x3ac188}};
-        for (const auto &u : kUploads)
-            std::memcpy(&g_vu.micro[u[0] * 2], eeRam + u[2], u[1] * 8u);
-        for (uint32_t &v : vu::g_segmentVersion)
-            ++v; // the compiled images checked again
-        // VU0: its one packet (0x3ae240: a DMA tag, then NOPs and MPGs).
-        const uint8_t *packet = eeRam + 0x3ae240u;
-        uint32_t tag;
-        std::memcpy(&tag, packet, 4);
-        const uint32_t bytes = 8u + (tag & 0xFFFFu) * 16u;
-        const uint8_t *stream = packet + 8;
-        for (uint32_t at = 0; at + 4 <= bytes;)
-        {
-            uint32_t code;
-            std::memcpy(&code, stream + at, 4);
-            at += 4;
-            const uint32_t cmd = (code >> 24) & 0x7Fu;
-            if (cmd == 0)
-                continue;
-            if (cmd != 0x4A || at % 8 != 0)
-                break;
-            const uint32_t num = ((code >> 16) & 0xFFu) ? (code >> 16) & 0xFFu : 256u, imm = code & 0x1FFu;
-            for (uint32_t k = 0; k < num && at + 8 <= bytes; ++k, at += 8)
-                std::memcpy(&g_vu0.micro[((imm + k) & 511u) * 2], stream + at, 8);
-        }
-    }
-
     uint64_t vif::vu1Pairs() { return g_vu.pairs; }
     uint64_t vif::vu1Programs() { return g_vu.programs; }
 
