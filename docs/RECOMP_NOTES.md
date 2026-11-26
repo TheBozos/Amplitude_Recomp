@@ -355,7 +355,23 @@ edges: the arena selection 0.14 % of the pixels apart by more than 32, the train
 one pass in 4000, whose header is not where expected. Not checked against VU1 yet: `0x6c`'s point light (no scene
 compared uses it).
 
-Next: a scene with `0x6c` compared, then the other programs (`0x3a78`, `0x2ff0`, `0x2d40`, `0x2890`, `0x1ee0`), and
+PsMultiMesh (RndMultiMesh's PS2 class; its draw `0x21a4d0`, by `0x21aa40` at vtable `0x3d2d48` slot 3) draws one mesh
+at each of its instances with VU1 program `0x3dc` (`0x1ee0`): 93 % of what VU1 did in a song once the meshes were
+native (the tunnel's grid). Its header is 19 quadwords: vf16-19 the camera's clip matrix, vf23 the colour's scale,
+vf24 / vf15 the viewport's scale and offset, vf20-22 the texture's transform, the GIF tag, vi12 / vi14 the lighting
+sub-program and its switch (vi15 is not in it), vf25-31 the lights. Then the mesh's first batch (`0x2161b0`: the packet
+`+0x164`, `+0x174` quadwords without its MSCAL, the instance block at `+0x176`; a pointer packet is copied into the
+scratchpad by `0x212500` instead), then chunks of instances, each flushed with MSCAL `0x3dc` or MSCNT: a count and each
+instance's x, y, z axes and position (REFs to the instance list's nodes at `+0x10`). The program lights and maps the
+vertices once, then draws them through clip matrix times instance, with F 0. Native: the first flush reads the header
+and the batch, each chunk's flush its instances (transformed on the CPU, one batch with the camera's matrix), and the
+chunk's MSCAL / MSCNT becomes the mark. In the training song no VU1 program `0x3dc` runs; the frames match as before
+(0.13 % of the pixels apart by more than 32, at edges). What VU1 still runs, by start: in the song `0x2890` (MSCAL
+`0x512`, built at `0x21a124`) and `0x2d40` / `0x2ff0` (MSCAL `0x5a8`, the second packet builder `0x214710`: the
+packet `+0x168`, the faces `+0x108`); on the arena selection `0x2d40` / `0x2ff0` run 22 million pairs in 40 frames.
+
+(`0x3a78`, the survey's busiest start before, is image 8's MSCNT: its later batches.) Next: `0x5a8`, then `0x512`, a
+scene with `0x6c` compared, and
 `AMP_NATIVE` on by default once a song and the menus match.
 
 ## Where it stands
