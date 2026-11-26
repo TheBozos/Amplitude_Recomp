@@ -442,7 +442,14 @@ frames, with player 2's CROSS at 8150, 8250 and 8500 (the FreQ select waits for 
 The native renderer is on by default since these comparisons; `AMP_NATIVE=0` gives the GS path back (VU1 runs the
 programs, the translator draws their kicks) for comparing.
 
-(`0x3a78`, the survey's busiest start before, is image 8's MSCNT: its later batches.) Next: the other draws (text, movies, the 2D) from their own functions.
+(`0x3a78`, the survey's busiest start before, is image 8's MSCNT: its later batches.) The 2D is not a path of its own: the text, the HUD and the menus are meshes (RndText's glyph quads, the panels) drawn
+by image 8 like the 3D, so they are native already. With the native renderer on, the GS translator draws 5 primitives
+in a song frame and 2 on the arena selection, all untextured sprites: clears of the frame, of FBP `0xd4` / `0xdc` /
+`0xe8` / `0xf3` (render-to-texture images) and the like. They come from the camera's and the renderer's own methods
+(PsCam `0x2128f0`, the renderer's vtable `0x3d2848`); the GIF tags of every packet go through one helper, `0x2121b0`,
+whose other callers are the materials' texture uploads (`0x213698` -> `0x213af0` -> `0x218fe0` -> `0x2176xx`-`0x217be0`)
+and PsMovie's draw (`0x37ced0`). The movies' pictures are image transfers into the frame (the backdrop). Next: nothing
+left on VU1 or drawn from VU1's output; a widescreen and resolution option on the native renderer's matrices.
 
 ## Where it stands
 
