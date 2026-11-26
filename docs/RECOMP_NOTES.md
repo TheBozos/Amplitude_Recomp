@@ -411,8 +411,23 @@ marks and the function hooks are gone. From boot into the training song: 4.2 mil
 program start left to VU1 (`0x2840`, MSCAL `0x508`, six pairs at boot); the frames match the GS path as before (the
 training song 0.12 %, the arena selection 0.18 % of the pixels apart by more than 32, at edges).
 
-(`0x3a78`, the survey's busiest start before, is image 8's MSCNT: its later batches.) Next: a scene with `0x6c` compared, the other draws (text, movies, the 2D), and `AMP_NATIVE`
-on by default once the songs, modes and menus match.
+Compared further (states saved on the GS path, loaded with `AMP_NATIVE` off and on): the training song with its tutorial
+panels (0.11 % of the pixels apart by more than 32) and Neotropolis's results screen over the arena (0.18 %). Two fixes
+came of the arena:
+- Image 8's clipper (`0x3588`, taken when a vertex is outside the guard band) drops a triangle with any vertex past +z
+  (z > |w|) before it clips the rest against -z. Clipped at both planes instead, the native path drew thin spikes of
+  the arena's near scenery that the console does not (1.86 % of the pixels apart).
+- The point light (`0x6c`) is the arenas' (2106 batches in 40 frames of Neotropolis; once in the whole run to the
+  training song): its software-pipelined microcode's clip-flag tests and Q timing were not read exactly, and the
+  magenta panels came out lit differently. The sub-program is now run on VU1 alone over the batch
+  (`vif::vu1Lighting`: vf25-31, vi14, vi15 from the header, vi2 at image 8's end), and the native path takes the
+  colours it leaves. The other sub-programs are native.
+`AMP_NATIVE_OFF=<MSCAL start>,...` leaves programs to VU1 (with their MSCNTs): how the spikes were found to be image 8's.
+To reach an arena's song: `AMP_UNLOCK_ALL=1` from boot and the song script's Accepts (`build/pad_song.txt`, then CROSS
+at 11000-11600); pad presses after a state load take the game's frame numbers.
+
+(`0x3a78`, the survey's busiest start before, is image 8's MSCNT: its later batches.) Next: the other draws (text, movies, the 2D), more modes compared (two to four players, Remix, the FreQmaker), and
+`AMP_NATIVE` on by default once they match.
 
 ## Where it stands
 

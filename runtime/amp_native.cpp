@@ -53,6 +53,7 @@ namespace amp
 
         uint64_t g_batches = 0, g_vu1 = 0; // AMP_NATIVE's report: batches drawn here, program starts left to VU1
         std::map<uint32_t, uint64_t> g_leftWhy; // why (a colour sub-program, or a program's code), how often
+        std::map<uint32_t, uint64_t> g_subs;    // the colour sub-programs met (image 8's; a multi-mesh's + 0x1000000)
 
         uint32_t rd32(const uint8_t *ram, uint32_t a)
         {
@@ -84,6 +85,31 @@ namespace amp
         // the GPU's own clipping answers): past it the GS Z wraps, and a surface reaching behind the camera (the
         // arenas' beams over the screen's corners) failed the depth test. The clip space is linear in the object's
         // space, so the cut vertices are the object's points and their values between the two ends.
+        // Image 8's clipper (0x3588) drops a triangle with any vertex past +z (z > |w|, CLIPW's +z flag) before it
+        // clips the rest against -z: those triangles are not drawn at all (left in, the arenas' near scenery showed
+        // thin spikes the console does not draw). `c`: the clip matrix's four columns.
+        void dropBeyond(const float (*c)[4], std::vector<Vertex> &tris)
+        {
+            size_t kept = 0;
+            for (size_t t = 0; t + 2 < tris.size(); t += 3)
+            {
+                bool beyond = false;
+                for (size_t k = t; k < t + 3; ++k)
+                {
+                    const Vertex &v = tris[k];
+                    const float z = c[0][2] * v.x + c[1][2] * v.y + c[2][2] * v.z + c[3][2];
+                    const float w = c[0][3] * v.x + c[1][3] * v.y + c[2][3] * v.z + c[3][3];
+                    beyond |= z > std::fabs(w);
+                }
+                if (beyond)
+                    continue;
+                if (kept != t)
+                    std::copy(tris.begin() + t, tris.begin() + t + 3, tris.begin() + kept);
+                kept += 3;
+            }
+            tris.resize(kept);
+        }
+
         // `c`: the clip matrix's four columns.
         void clipDepth(const float (*c)[4], std::vector<Vertex> &tris)
         {
@@ -296,6 +322,7 @@ namespace amp
             std::memcpy(&vi15, &h[13][2], 4);
             p.sh = Shading{sub & 0xFFFFu, (vi14 & 0xFFFFu) != 0, (vi15 & 0xFFFFu) != 0, h[14], h[15], h[16], h[17],
                            h[18], h[19], h[20], h[5], h[8], h[9], h[10]};
+            ++g_subs[p.sh.sub];
             if (!p.sh.known())
                 return ++g_leftWhy[p.sh.sub], false;
             if (!tagPrim(h[11], p.prim))
@@ -308,11 +335,21 @@ namespace amp
         {
             const Image8 &p = g_image8;
             const float (*h)[4] = p.h;
+            // The point light (0x6c) is run on VU1 itself over the batch (its microcode's flag tests and Q pipeline are
+            // not read exactly yet): the colours it leaves are then the vertices' own (as 0x3d7 takes them).
+            Shading sh = p.sh;
+            if (sh.sub == 0x6cu)
+            {
+                uint32_t vi[3];
+                std::memcpy(vi, h[13], 12);
+                vif::vu1Lighting(0x6c, &h[14], static_cast<uint16_t>(vi[1]), static_cast<uint16_t>(vi[2]));
+                sh.sub = 0x3d7u;
+            }
             static std::vector<Vertex> tris;
             tris.clear();
             const bool ok = triangleBatch(m, 21, [&](const float *q) {
                 Vertex v;
-                shade(p.sh, q, v);
+                shade(sh, q, v);
                 // The fog: vf14.w * clip.w + vf15.w, 0-255 (not over w).
                 const float w = h[1][3] * v.x + h[2][3] * v.y + h[3][3] * v.z + h[4][3];
                 v.fog = float(static_cast<uint32_t>(std::clamp(h[6][3] * w + h[7][3], 0.0f, 255.0f))) * (1.0f / 255.0f);
@@ -320,6 +357,7 @@ namespace amp
             });
             if (!ok)
                 return false;
+            dropBeyond(&h[1], tris);
             clipDepth(&h[1], tris);
             draw(p.prim, p.matrix, tris);
             return true;
@@ -438,15 +476,22 @@ namespace amp
             // vi15 is not in this header (the unit keeps its own): taken as clear, as image 8 leaves it.
             const Shading sh{sub & 0xFFFFu, (vi14 & 0xFFFFu) != 0, false, h[12], h[13], h[14], h[15],
                              h[16], h[17], h[18], h[4], h[7], h[8], h[9]};
+            ++g_subs[sh.sub | 0x1000000u];
             if (!sh.known())
                 return ++g_leftWhy[sh.sub | 0x1000000u], false;
             if (!tagPrim(h[10], p.prim))
                 return ++g_leftWhy[0x1ee0001u], false;
             toScreen(&h[0], h[5], h[6], p.matrix);
+            Shading lit = sh;
+            if (lit.sub == 0x6cu) // the point light run on VU1 itself (see image8Batch)
+            {
+                vif::vu1Lighting(0x6c, &h[12], static_cast<uint16_t>(vi14), 0);
+                lit.sub = 0x3d7u;
+            }
             p.tris.clear();
             const bool ok = triangleBatch(m, 21, [&](const float *q) {
                 Vertex v;
-                shade(sh, q, v);
+                shade(lit, q, v);
                 v.fog = 0.0f; // the program leaves F 0
                 p.tris.push_back(v);
             });
@@ -572,6 +617,28 @@ namespace amp
         static const bool on = std::getenv("AMP_NATIVE") && std::atoi(std::getenv("AMP_NATIVE")) != 0;
         if (!on)
             return false;
+        // AMP_NATIVE_OFF=<MSCAL start>[,...] (hex, e.g. 31f0,2d40): those programs left to VU1, their MSCNTs too.
+        static const std::set<uint32_t> off = [] {
+            std::set<uint32_t> s;
+            if (const char *e = std::getenv("AMP_NATIVE_OFF"))
+                for (const char *at = e; *at;)
+                {
+                    char *end = nullptr;
+                    const unsigned long v = std::strtoul(at, &end, 16);
+                    if (end == at)
+                        break;
+                    s.insert(static_cast<uint32_t>(v));
+                    at = *end == ',' ? end + 1 : end;
+                }
+            return s;
+        }();
+        static const std::map<uint32_t, uint32_t> family = {{0x3a78, 0x31f0}, {0x2ff0, 0x2d40}, {0x2340, 0x1ee0}, {0x2a78, 0x2890}};
+        if (!off.empty())
+        {
+            const auto it = family.find(pcBytes);
+            if (off.count(it != family.end() ? it->second : pcBytes))
+                return false;
+        }
         const Memory m{vuData, top};
         // A start answered here leaves the continuation where the program's end would (its [E] pair, plus two). An
         // MSCAL whose header or batch is not read runs on VU1, and the MSCNTs after it; an MSCNT after an MSCAL
@@ -643,7 +710,10 @@ namespace amp
                     (unsigned long long)g_vu1);
         for (const auto &[why, count] : g_leftWhy)
             std::printf(" %x:%llu", why, (unsigned long long)count);
-        std::printf(" )\n");
+        std::printf(" ); colour sub-programs:");
+        for (const auto &[sub, count] : g_subs)
+            std::printf(" %x:%llu", sub, (unsigned long long)count);
+        std::printf("\n");
     }
 
     void installNative(Runtime &, bozo::port::Registry &r)

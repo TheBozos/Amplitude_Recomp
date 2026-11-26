@@ -99,6 +99,10 @@ namespace amp
         void report();
         uint64_t vu1Pairs();
         uint64_t vu1Programs();
+        // A colour sub-program of image 8's (pair `subPair`: 0x6c the point light) run on VU1 alone over the batch at the
+        // program's TOPS, its lights (vf25-31) and switches given: the batch's colours lit in VU1's memory, for the
+        // native renderer to read (runtime/amp_native.cpp).
+        void vu1Lighting(uint32_t subPair, const float (*lights)[4], uint16_t vi14, uint16_t vi15);
         // The EE's RAM: where VIF data comes from, for the VU1 survey.
         inline const uint8_t *eeRam = nullptr;
     }

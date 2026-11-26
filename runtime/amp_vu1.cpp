@@ -1337,6 +1337,20 @@ namespace amp
 
     uint8_t *vu0::codeMemory() { return reinterpret_cast<uint8_t *>(g_vu0.micro); }
 
+    void vif::vu1Lighting(uint32_t subPair, const float (*lights)[4], uint16_t vi14, uint16_t vi15)
+    {
+        Vu1 &v = g_vu;
+        for (int k = 0; k < 7; ++k)
+            std::memcpy(v.vf[25 + k].f, lights[k], 16);
+        v.vi[14] = vi14;
+        v.vi[15] = vi15;
+        v.vi[2] = 0x3a68u / 8u; // its jr vi2: image 8's end (the [E] pair), where the unit stops
+        Vu1 *const was = g_cur;
+        g_cur = &g_vu;
+        runProgram(subPair * 8u);
+        g_cur = was;
+    }
+
     uint64_t vif::vu1Pairs() { return g_vu.pairs; }
     uint64_t vif::vu1Programs() { return g_vu.programs; }
 
