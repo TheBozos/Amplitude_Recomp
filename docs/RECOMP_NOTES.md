@@ -553,6 +553,12 @@ gone).
 ## Next steps
 
 1. Timing: input and sound against the beat, compared with the console.
-2. Upstream to BozoEngine: the IRX translator fix and the mixer's output IRQ are merged; still a native `sceIoctl`
-   status poll and `sceSifInitCmd`, the libmpeg defaults (TMB's reference layout, the heap after `.bss`) that break
-   other games, and a stream ring filled by banks (`sceCdStRead`).
+2. Upstream to BozoEngine: the IRX translator fix and the mixer's output IRQ are merged. Open:
+   - #150: the `sceIoctl` status poll, `sceSifInitCmd`, and reads of a stream ring that bring all their sectors or
+     none (`CdState::wholeStreamReads`).
+   - #160: `sceGsSyncV`'s wait for the vblank.
+   - #161: libmpeg's stream callback entries from the work area off the reference layout. Once it is merged, the
+     port's heap move into `.text` (`amp_main.cpp`) can go: checked, the boot reaches the menu without it.
+
+   libmpeg's default stays TMB's reference layout: TMB and the engine's reference checks rely on it, and every other
+   port with movies (Onimusha, Shinobido, Amplitude) sets `referenceLayout = false`.
