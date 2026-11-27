@@ -17,6 +17,7 @@ namespace amp::options
     {
         std::atomic<bool> g_widescreen{false};
         std::atomic<int> g_imageScale{1};
+        std::atomic<bool> g_inSong{false};
         std::atomic<int> g_audioOffsetMs{50};
         std::array<std::atomic<bool>, static_cast<size_t>(Cheat::Count)> g_cheats{};
         // What a cheat set in the game's memory, to put back when it is turned off (the address written, 0: nothing).
@@ -63,6 +64,8 @@ namespace amp::options
         }
     } // namespace
 
+    bool inSong() { return g_inSong.load(std::memory_order_relaxed); }
+    void watchGame(const uint8_t *ram) { g_inSong.store(inRam(word(ram, 0x3af838u)), std::memory_order_relaxed); }
     bool widescreen() { return g_widescreen.load(std::memory_order_relaxed); }
     void setWidescreen(bool on) { g_widescreen.store(on, std::memory_order_relaxed); }
     float clipScaleX() { return widescreen() ? 0.75f : 1.0f; }

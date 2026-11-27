@@ -580,6 +580,7 @@ namespace amp::gs
         bozo::render::Renderer &g_renderer = bozo::render::Renderer::instance();
         std::map<std::string, uint64_t> g_survey;                      // AMP_SURVEY
         uint32_t g_displayFbp = 0;                                     // the frame buffer shown last
+        float g_screenWidth = 640.0f;                                  // the frame shown's width in GS pixels (DISPLAY1)
         uint64_t g_prims = 0, g_offscreenPrims = 0, g_flips = 0, g_uploads = 0, g_checksum = 0xCBF29CE484222325ull;
 
         // The frame buffers the game displays (DISPFB's FBP, flip), as TEX0's block pointers: a texture there is a frame.
@@ -1580,6 +1581,7 @@ namespace amp::gs
         // lines, the frame's own in interlaced frame mode (Shinobido's 512 x 512 PAL frame).
         const uint32_t magh = ((display >> 23) & 0xFu) + 1u, dw = ((display >> 32) & 0xFFFu) + 1u, dh = ((display >> 44) & 0x7FFu) + 1u;
         screen.width = display ? float(dw / magh) : 512.0f;
+        g_screenWidth = screen.width;
         screen.height = display ? float(dh) : 512.0f;
         // The Z buffer's range from ZBUF's PSMZ: Z32, Z24, Z16 / Z16S.
         const uint32_t psmz = (g_s.ctx[0].zbuf >> 24) & 0xFu;
@@ -1759,6 +1761,64 @@ namespace amp::gs
         return displayed(c.frame & 0x1FFu);
     }
 
+    namespace
+    {
+        // Widescreen's HUD: the programs drew everything 4:3 in the middle (the clip space's x scaled by 3/4). In a song
+        // (options::inSong) the HUD's panels are placed by where they lie in the 4:3 picture. They are the meshes on the
+        // HUD camera's plane: square to a camera looking at them from 772 away (w 772 at every vertex; the scene's
+        // billboards, the ship's glows, are square to the scene's camera at other depths). One across all the picture is
+        // stretched over the 16:9 width; one wholly in the outer third of a side (the meters, the score, the portrait's
+        // frame) is moved out to that edge; the rest (the instrument's name) stay. A 3D batch wholly in a side's outer
+        // third goes with it when its camera looks there (the view axis's vanishing point there: the FreQ in the
+        // portrait, drawn by an off-centre camera); the scene's camera looks at the middle. The menus keep the 4:3
+        // picture (their text and panels are separate meshes: placed apart, a line came off its panel).
+        constexpr float kHudDistance = 772.0f;
+        void anchorHud(std::array<float, 16> &m, const Vertex *v, uint32_t count)
+        {
+            const float sx = options::clipScaleX();
+            if (sx == 1.0f || !count || !options::inSong())
+                return;
+            const float cx = g_screenWidth * 0.5f, half = cx * sx; // the 4:3 picture: cx +- half
+            const float d = m[3] * m[3] + m[7] * m[7] + m[11] * m[11];
+            if (d == 0.0f) // projected by the program itself (w 1: particles)
+                return;
+            float lo = 1e30f, hi = -1e30f, wLo = 1e30f, wHi = -1e30f;
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                const float w = m[3] * v[i].x + m[7] * v[i].y + m[11] * v[i].z + m[15];
+                wLo = std::min(wLo, w);
+                wHi = std::max(wHi, w);
+                if (w <= 0.0f)
+                    continue;
+                const float x = (m[0] * v[i].x + m[4] * v[i].y + m[8] * v[i].z + m[12]) / w;
+                lo = std::min(lo, x);
+                hi = std::max(hi, x);
+            }
+            if (lo > hi)
+                return;
+            const float a = (lo - cx) / half, b = (hi - cx) / half; // -1 .. 1 across the 4:3 picture
+            float side = b <= -1.0f / 3.0f ? -1.0f : a >= 1.0f / 3.0f ? 1.0f : 0.0f;
+            if (std::fabs(wLo - kHudDistance) < 0.01f * kHudDistance && std::fabs(wHi - kHudDistance) < 0.01f * kHudDistance)
+            {
+                if (a <= -0.98f && b >= 0.98f)
+                {
+                    for (int k = 0; k < 4; ++k) // x' = cx + (x - cx) / sx
+                        m[4 * k + 0] = (m[4 * k + 0] - cx * m[4 * k + 3]) / sx + cx * m[4 * k + 3];
+                    return;
+                }
+            }
+            else
+            {
+                // The view axis (the w row's direction, far along it) on the screen.
+                const float u = ((m[0] * m[3] + m[4] * m[7] + m[8] * m[11]) / d - cx) / half;
+                if (side * u < 1.0f / 3.0f)
+                    side = 0.0f;
+            }
+            for (int k = 0; side != 0.0f && k < 4; ++k)
+                m[4 * k + 0] += side * (cx - half) * m[4 * k + 3];
+        }
+    }
+
     void nativeTriangles(uint64_t prim, const float matrix[16], const Vertex *v, uint32_t count)
     {
         writeRegister(0x00, prim); // PRIM, as the pass's GIF tag (PRE) sets it at the kick
@@ -1782,6 +1842,8 @@ namespace amp::gs
                 m[4 * k + 2] = matrix[4 * k + 2];
                 m[4 * k + 3] = matrix[4 * k + 3];
             }
+            if (!into->material.target && displayed(c.frame & 0x1FFu))
+                anchorHud(m, v, count);
             for (Batch *b : {into, alsoInto})
                 if (b)
                 {

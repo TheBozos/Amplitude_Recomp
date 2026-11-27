@@ -529,8 +529,15 @@ matrix's x by 3/4 (the particles' corner offset too), so the screen's mapping an
 visibility test runs with the horizontal pair turned out to the wide half-angle (`tan h / 0.75`, still through the
 camera; put back after), so the scenery past the 4:3 edges is drawn. (Scaling the planes' world x instead, the first
 try, tilted them off the camera and culled the gameplay's target rings.) the picture is shown 16:9 (`bozo::app::setPictureAspect`, a
-BozoEngine addition) and a movie's backdrop stays 4:3 in the middle. The HUD and menus are meshes under an
-orthographic camera: scaled the same way, they stay 4:3 in the middle (their black bands end at the 4:3 edges).
+BozoEngine addition) and a movie's backdrop stays 4:3 in the middle. The HUD is drawn by a camera looking
+straight at it from 772 away (not an orthographic one: its meshes' matrices have w 772 at every vertex, square to
+the camera). In a song (`options::inSong`: the player object `*0x3af838` made, 0 in the menus) its panels are placed
+by where they lie in the 4:3 picture (`anchorHud` in `amp_gs_state.cpp`): one wholly in the outer third of a side
+(the meters, the score, the portrait's frame) moves out to that edge, one across all of it stretches, the rest
+stay; the FreQ in the portrait, a 3D mesh drawn by an off-centre camera, goes with its frame (its view axis's
+vanishing point lies in that third). The ship's glows are billboards square to the scene's camera at other depths,
+the particles projected by their programs (w 1): both stay with the scene. The menus stay 4:3 in the middle: their
+text and panels are separate meshes, and placed apart a heading or a line's end came off its panel.
 Render-to-texture images are not widened. Sharper effects: those images drawn at twice their GS size
 (`setTargetSize`; the draws' mapping is in GS pixels). The cheats moved from `amp_main` to `amp_options` (live,
 undone when turned off: the flags they set put back to 0).

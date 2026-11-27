@@ -21,6 +21,9 @@ namespace amp::options
     float clipScaleX();
     // Render-to-texture images (the track's surface, the monitors, the HUD's pictures) drawn at this many times their
     // GS size: 1 as the console, 2 sharper.
+    // A song playing (its player object, *0x3af838, made: 0 in the menus), as of the last frame's end (watchGame).
+    bool inSong();
+    void watchGame(const uint8_t *ram);
     int imageScale();
     void setImageScale(int scale);
 

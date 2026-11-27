@@ -78,7 +78,7 @@ Captured from the current build at 960x720.
 | ![Tracks turned on, the score climbing](docs/screenshots/gameplay-score.jpg) | ![Player stats after the song](docs/screenshots/player-stats.jpg) | ![Elektro Kore: Cool Baby](docs/screenshots/gameplay-elektro-kore.jpg) |
 | ![Two players](docs/screenshots/gameplay-2p.jpg) | ![Four players (multitap)](docs/screenshots/gameplay-4p.jpg) | ![Remix mode](docs/screenshots/remix.jpg) |
 | ![Duel](docs/screenshots/duel.jpg) | ![Basic training, the blasters' glows](docs/screenshots/gameplay-training.jpg) | ![PC SETTINGS' pages in the Options menu](docs/screenshots/options-pc-settings.jpg) |
-| ![PC SETTINGS in the pause menu](docs/screenshots/pause-pc-settings.jpg) | ![PC SETTINGS' VIDEO page, drawn by the game](docs/screenshots/pc-settings-video.jpg) | |
+| ![PC SETTINGS in the pause menu](docs/screenshots/pause-pc-settings.jpg) | ![PC SETTINGS' VIDEO page, drawn by the game](docs/screenshots/pc-settings-video.jpg) | ![Widescreen: the HUD out at the screen's edges](docs/screenshots/gameplay-widescreen.jpg) |
 
 ## Goal
 
