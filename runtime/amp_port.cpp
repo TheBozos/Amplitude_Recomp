@@ -67,7 +67,7 @@ namespace amp
         // Native instruction sites: the renderer's DMA register accesses (runtime/amp_render.cpp).
         bool nativeInstruction(uint8_t *ram, R5900Context *ctx, Runtime *rt, uint32_t pc)
         {
-            return renderSite(ram, ctx, rt, pc) || ipuSite(ram, ctx, rt, pc);
+            return renderSite(ram, ctx, rt, pc) || ipuSite(ram, ctx, rt, pc) || vu0Site(ram, ctx, rt, pc);
         }
     } // namespace
 

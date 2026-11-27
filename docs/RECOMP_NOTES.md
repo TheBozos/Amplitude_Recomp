@@ -151,6 +151,21 @@ interpreter runs them all).
   `0x3ae240` at boot): the FreQs' bones. The port had not registered them, so the engine's built-in table answered
   with Twisted Metal: Black's VU0 programs: the FreQs were drawn without arms and legs. `runtime/amp_render.cpp`
   registers both with `runtime/amp_vu1.cpp`'s interpreter (as Shinobido does).
+- **The FreQs' shards: VU0 runs beside the EE.** The FreQs' arms, legs and shoes were drawn in jagged shards with any
+  video setting (and in the GS path, and in the README's first FreQmaker picture). The skinning `0x215d18` is
+  software-pipelined on VU0 running in parallel:
+
+  - `QMTC2.I` the next vertex into vf11 (waiting for the program running);
+  - `VCALLMS 0x156` (or `0x1ba` in its second loop);
+  - `QMFC2` vf16 / vf12 *without* the interlock bit: the previous vertex's results, which the program just started has
+    not yet overwritten;
+  - after the loop `QMFC2.I` (waiting) for the last vertex's.
+
+  The port ran each program at once and wrote its outputs back at the call, so every vertex took its neighbour's
+  results: a mesh near its shape, in shards. `vu0::run` now runs the program at once (it reads its inputs as it
+  starts) but holds its outputs back. They are committed at the next VCALLMS and at the interlocked moves:
+  `0x215df8`, `0x215e30`, `0x215e9c` and `0x215ed4` are native sites (`vu0Site`) that commit, then move. These are
+  the game's only VU0 calls and only interlocked COP2 moves in code.
 - **Render images are freed.** A buffer counts as a frame only when displayed within the last 30 flips (the four last
   displayed kept a loading screen's buffer a frame for ever), and when the 14 images are taken the one drawn least
   lately is given up: after a few menus and arenas the track was noise again.

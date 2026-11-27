@@ -46,7 +46,7 @@ with its sound, the track's surface and the HUD's monitor drawn by render-to-tex
 | A complete song: streamed music, gems, scoring, energy, results screen | ✅ |
 | Render-to-texture (the track's surface, the FreQ's monitor, HUD messages) | ✅ |
 | Intro movie sound, the song select's preview loops | ✅ |
-| FreQs drawn whole (the game's VU0 microprograms) | ✅ |
+| FreQs drawn whole and smooth (the game's VU0 microprograms, run beside the EE as on the console) | ✅ |
 | Full speed: the VU1 programs compiled to C++ (60 frames a second with room to spare) | ✅ |
 | The title's and menus' glows and highlighted labels (were white blotches) | ✅ |
 | Sound timing: the song's clock held back to the music as the PC plays it (an audio offset, adjustable) | ✅ |

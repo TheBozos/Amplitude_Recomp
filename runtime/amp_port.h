@@ -30,6 +30,8 @@ namespace amp
         void report();
     }
     bool ipuSite(uint8_t *ram, R5900Context *ctx, Runtime *rt, uint32_t pc);
+    // The skinning's interlocked COP2 moves (runtime/amp_vu1.cpp: the held-back VU0 outputs committed first).
+    bool vu0Site(uint8_t *ram, R5900Context *ctx, Runtime *rt, uint32_t pc);
     void reportIpu();
     // The engine's libraries (set by installAudio).
     bozo::libs::Libraries *libraries();
@@ -113,7 +115,9 @@ namespace amp
     // EE's COP2 registers and the runtime's VU0 data memory (VCALLMS).
     namespace vu0
     {
+        // VCALLMS (the outputs held back as the console's VU0 would, beside the EE: amp_vu1.cpp) and their commit.
         void run(Runtime *rt, R5900Context *ctx, uint32_t pcBytes);
+        void commit(R5900Context *ctx);
         // Its 4 KB code memory (the EE's view at 0x11000000: port::Registry::vu0CodeMemory).
         uint8_t *codeMemory();
     }

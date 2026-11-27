@@ -1270,8 +1270,76 @@ namespace amp
         g_cv = in;
     }
 
+    namespace
+    {
+        // A VU0 program's outputs, held back until the EE would see them (vu0::run's note).
+        struct Vu0State
+        {
+            float vf[32][4];
+            float acc[4];
+            uint32_t vi[16];
+            float q, i, p;
+            uint32_t r, status, mac, clip;
+        };
+        bool g_vu0Pending = false;
+        Vu0State g_vu0Before, g_vu0After;
+
+        Vu0State vu0State(const R5900Context *ctx)
+        {
+            Vu0State s;
+            for (int r = 0; r < 32; ++r)
+                std::memcpy(s.vf[r], ctx->vu0_vf[r].f, 16);
+            std::memcpy(s.acc, ctx->vu0_acc.f, 16);
+            for (int r = 0; r < 16; ++r)
+                s.vi[r] = ctx->vi[r];
+            s.q = ctx->vu0_q, s.i = ctx->vu0_i, s.p = ctx->vu0_p;
+            s.r = ctx->vu0_r, s.status = ctx->vu0_status, s.mac = ctx->vu0_mac, s.clip = ctx->vu0_clip_flags;
+            return s;
+        }
+    } // namespace
+
+    // The held-back outputs made visible: what the program changed, over what the EE has now (its writes since kept
+    // where the program did not write).
+    void vu0::commit(R5900Context *ctx)
+    {
+        if (!g_vu0Pending)
+            return;
+        g_vu0Pending = false;
+        const Vu0State &a = g_vu0Before, &b = g_vu0After;
+        for (int r = 1; r < 32; ++r)
+            if (std::memcmp(a.vf[r], b.vf[r], 16) != 0)
+                std::memcpy(ctx->vu0_vf[r].f, b.vf[r], 16);
+        if (std::memcmp(a.acc, b.acc, 16) != 0)
+            std::memcpy(ctx->vu0_acc.f, b.acc, 16);
+        for (int r = 1; r < 16; ++r)
+            if (a.vi[r] != b.vi[r])
+                ctx->vi[r] = b.vi[r];
+        if (std::memcmp(&a.q, &b.q, 4) != 0)
+            ctx->vu0_q = b.q;
+        if (std::memcmp(&a.i, &b.i, 4) != 0)
+            ctx->vu0_i = b.i;
+        if (std::memcmp(&a.p, &b.p, 4) != 0)
+            ctx->vu0_p = b.p;
+        if (a.r != b.r)
+            ctx->vu0_r = b.r;
+        if (a.status != b.status)
+            ctx->vu0_status = b.status;
+        if (a.mac != b.mac)
+            ctx->vu0_mac = b.mac;
+        if (a.clip != b.clip)
+            ctx->vu0_clip_flags = b.clip;
+    }
+
+    // VCALLMS: the program run at once on the registers as they are (it reads its inputs as it starts), its outputs held
+    // back. On the console VU0 runs beside the EE: a QMFC2 without the interlock bit right after a VCALLMS reads the
+    // registers before the program writes them, and the next VCALLMS (or an interlocked QMFC2.I / QMTC2.I) first
+    // waits for it to end. Amplitude's skinning (0x215d18) is software-pipelined on that: it starts vertex n + 1's
+    // program and then reads vertex n's results (QMFC2), the last ones with QMFC2.I. Run and written back at once, every
+    // FreQ vertex took its neighbour's place (the FreQs' arms and legs in shards). The held-back outputs are committed
+    // at the next VCALLMS and at the interlocked moves (vu0Site).
     void vu0::run(Runtime *rt, R5900Context *ctx, uint32_t pcBytes)
     {
+        commit(ctx);
         Vu1 &v = g_vu0;
         v.data = bozo_vu0_memory(rt);
         v.qwMask = 0xFFu;
@@ -1321,18 +1389,48 @@ namespace amp
             v.q = v.pendingQ;
             v.qDelay = 0;
         }
+        // The outputs held back (committed by the next VCALLMS or an interlocked move).
+        g_vu0Before = vu0State(ctx);
+        R5900Context after = *ctx;
         for (int r = 1; r < 32; ++r)
-            std::memcpy(ctx->vu0_vf[r].f, v.vf[r].f, 16);
-        std::memcpy(ctx->vu0_acc.f, v.acc.f, 16);
+            std::memcpy(after.vu0_vf[r].f, v.vf[r].f, 16);
+        std::memcpy(after.vu0_acc.f, v.acc.f, 16);
         for (int r = 1; r < 16; ++r)
-            ctx->vi[r] = v.vi[r];
-        ctx->vu0_q = v.q;
-        ctx->vu0_i = v.i;
-        ctx->vu0_p = v.p;
-        ctx->vu0_r = v.r & 0x7FFFFFu;
-        ctx->vu0_status = v.status;
-        ctx->vu0_mac = v.mac;
-        ctx->vu0_clip_flags = v.clip;
+            after.vi[r] = v.vi[r];
+        after.vu0_q = v.q;
+        after.vu0_i = v.i;
+        after.vu0_p = v.p;
+        after.vu0_r = v.r & 0x7FFFFFu;
+        after.vu0_status = v.status;
+        after.vu0_mac = v.mac;
+        after.vu0_clip_flags = v.clip;
+        g_vu0After = vu0State(&after);
+        g_vu0Pending = true;
+    }
+
+    // The interlocked COP2 moves of the skinning (0x215d18): the program running ended first (its outputs committed),
+    // then the move.
+    bool vu0Site(uint8_t *ram, R5900Context *ctx, Runtime *, uint32_t pc)
+    {
+        switch (pc)
+        {
+        case 0x215df8u: // native site: QMTC2.I (the skinning's first loop: the next vertex in)
+        case 0x215e30u: // native site: QMFC2.I (its last vertex out)
+        case 0x215e9cu: // native site: QMTC2.I (the second loop)
+        case 0x215ed4u: // native site: QMFC2.I
+            break;
+        default:
+            return false;
+        }
+        uint32_t word;
+        std::memcpy(&word, ram + pc, 4);
+        const uint32_t fmt = (word >> 21) & 31u, rt = (word >> 16) & 31u, rd = (word >> 11) & 31u;
+        vu0::commit(ctx);
+        if (fmt == 1u) // QMFC2
+            std::memcpy(&ctx->r[rt], ctx->vu0_vf[rd].f, 16);
+        else if (fmt == 5u && rd != 0u) // QMTC2
+            std::memcpy(ctx->vu0_vf[rd].f, &ctx->r[rt], 16);
+        return true;
     }
 
     uint8_t *vu0::codeMemory() { return reinterpret_cast<uint8_t *>(g_vu0.micro); }
