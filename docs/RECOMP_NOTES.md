@@ -568,8 +568,17 @@ their presses after the intro 3,770 frames earlier. States keep their own frame 
 
 ## The game's menus: PC SETTINGS
 
-The Options menu and the pause menu have a PC SETTINGS entry, in the game's own style. Selecting it opens the window's
-settings on the Amplitude tab: the video options, the cheats, save states and Quit.
+The Options menu and the pause menu have a PC SETTINGS entry, in the game's own style. Selecting it turns the panel's
+own rows into PC pages, which the game draws itself with its font, highlight and cursor (no window of the port's):
+
+| Page | Rows |
+|---|---|
+| main | VIDEO, CHEATS, SAVE STATES, QUIT GAME; the pause menu adds BACK and a blank row |
+| VIDEO | WIDESCREEN, SHARPER EFFECTS, AUDIO OFFSET, BACK |
+| CHEATS | AUTOPILOT, INFINITE ENERGY, UNLOCK ALL, BACK |
+| SAVE STATES | SLOT, SAVE STATE, LOAD STATE, BACK |
+
+The first version opened the window's F2 settings instead; the pages are what the other ports (TMB, Onimusha) have.
 
 **The menus are data.** `metagame/gen/meta.ui.bin` defines every screen and panel as a binary DataArray. It holds a
 version byte, the source files' names, then the root list. A list is a u16 count, a u32 id, a u32 file index, its
@@ -617,16 +626,38 @@ call hook that matched the names' addresses in a0-a3 and in what they point to).
 - A panel (the freq_panel class, vtable `0x3cfc28`) keeps its focused component at +0x88, and a component keeps its
   name at +4. Found by diffing RAM with each Options button focused in turn.
 - The panel's draw (`0x19e0d0`, once a frame for each panel shown) is wrapped to note when `pc_settings` has the focus.
-- A Cross newly down in `scePadRead`'s data, any pad, within two vblanks of that opens the settings. It goes through
-  BozoEngine's `bozo::app::requestSettings("Amplitude")`, taken at the panel's next draw on the window's thread.
-- While open, the settings hold the gamepads.
+- A Cross newly down in `scePadRead`'s data, any pad, within two vblanks of that opens the pages.
 
-`AMP_TRACE_MENU=1` prints each panel's focus as it changes, and each Cross. `AMP_NO_PC_MENU=1` keeps the game's own
-files. `AMP_ARK_OVERLAY_DIR=<folder>` (development) takes `meta.ui.bin`, `english_messages.txt.bin`, `o_main.rnd` and
+**The pages.**
+
+- *Rows.* A panel keeps its components in a map at +0x78. The tree's header has its root at +4; a node has its left
+  and right at +8 and +0xc, its name at +0x10 and its component at +0x14. The rows are those components in the
+  navigator's order, and a component's Text is at +0x38.
+- *Labels.* A row's label is set with the game's own `0x242d38(text, string)`, which the panel's load uses to set each
+  label from english_screens. Found by tracing which call took the "MEMORY CARD" string; a Text's string is at +0x124.
+  The originals are read from there on entering, and put back on leaving.
+- *Calling the game.* The game's functions are called on a copy of the thread's context, as TMB does (BozoEngine
+  kernel.md section 3b). Its stack is 0x200 bytes below the thread's, and the labels' strings go in between.
+- *Pad.* Up and Down stay the game's: its navigator moves the cursor over the rows. Cross, Left, Right, Triangle,
+  Circle, Start, Select and Square are written back as released in `scePadRead`'s data while a page is up. A button
+  the pages took stays hidden until it is released: the game reads the pad more than once a frame, and a Triangle that
+  left the pages also left the Options menu before this.
+- *Help line.* The Options panel's help line is the Text the game gives `o_main_pc_settings_HELP`. While a page is up,
+  the game's own help for a row (set by `0x242d38` as its cursor moves, wrapped) becomes the page row's help. That
+  string goes at `0x108000`, recompiled code never read as data.
+- *Save states.* Saving puts the panel's own labels back for that frame, so a state never holds the pages, and shows
+  them again after. Loading forgets the pages: the state has its own panel.
+
+`AMP_TRACE_MENU=1` prints each panel's focus as it changes. `AMP_NO_PC_MENU=1` keeps the game's own files.
+`AMP_ARK_OVERLAY_DIR=<folder>` (development) takes `meta.ui.bin`, `english_messages.txt.bin`, `o_main.rnd` and
 `s_pause.rnd` from a folder instead.
 
-Checked: both entries appear and open the settings; a Solo song from boot to Freestyle; the Options menu's Game
-Settings and Credits.
+Checked, in the window:
+
+- The Options pages: VIDEO's widescreen on, the picture at 16:9. The help lines follow the rows. Leaving puts the
+  game's labels back and stays in Options.
+- The pause pages: SAVE STATES, back twice to the game's own pause menu, still paused.
+- A Solo song from boot to Freestyle, and the Options menu's Game Settings and Credits, with the edited files.
 
 ## Where it stands
 

@@ -164,29 +164,6 @@ namespace amp::options
 
     namespace
     {
-        std::mutex g_openMutex;
-        std::function<void()> g_open;
-    }
-
-    void setOpenSettings(std::function<void()> open)
-    {
-        std::lock_guard lock(g_openMutex);
-        g_open = std::move(open);
-    }
-
-    void openSettings()
-    {
-        std::function<void()> o;
-        {
-            std::lock_guard lock(g_openMutex);
-            o = g_open;
-        }
-        if (o)
-            o();
-    }
-
-    namespace
-    {
         std::mutex g_stateMutex;
         std::function<void(int)> g_save, g_load;
     }
@@ -224,5 +201,62 @@ namespace amp::options
         }
         if (f)
             f(slot);
+    }
+
+    namespace
+    {
+        std::function<int()> g_getSlot;
+        std::function<void(int)> g_setSlot;
+        std::function<std::string(int)> g_summary;
+        int g_slot = 0;
+        std::function<void(bool)> g_widescreenHook;
+    }
+
+    void setStateSlots(std::function<int()> get, std::function<void(int)> set, std::function<std::string(int)> summary)
+    {
+        std::lock_guard lock(g_stateMutex);
+        g_getSlot = std::move(get);
+        g_setSlot = std::move(set);
+        g_summary = std::move(summary);
+    }
+
+    int stateSlot()
+    {
+        std::lock_guard lock(g_stateMutex);
+        return g_getSlot ? g_getSlot() : g_slot;
+    }
+
+    void setStateSlot(int slot)
+    {
+        slot = ((slot % kStateSlots) + kStateSlots) % kStateSlots;
+        std::lock_guard lock(g_stateMutex);
+        g_slot = slot;
+        if (g_setSlot)
+            g_setSlot(slot);
+    }
+
+    std::string stateSummary(int slot)
+    {
+        std::lock_guard lock(g_stateMutex);
+        return g_summary ? g_summary(slot) : std::string();
+    }
+
+    void setWidescreenHook(std::function<void(bool)> hook)
+    {
+        std::lock_guard lock(g_stateMutex);
+        g_widescreenHook = std::move(hook);
+    }
+
+    void applyWidescreen(bool on)
+    {
+        setWidescreen(on);
+        save();
+        std::function<void(bool)> h;
+        {
+            std::lock_guard lock(g_stateMutex);
+            h = g_widescreenHook;
+        }
+        if (h)
+            h(on);
     }
 } // namespace amp::options

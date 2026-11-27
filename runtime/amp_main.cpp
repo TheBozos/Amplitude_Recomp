@@ -332,8 +332,10 @@ int main(int argc, char **argv)
         game.stop = [&] { host.requestStop(); };
         amp::options::setQuit([&] { host.requestStop(); }); // the Amplitude tab's Quit
         amp::options::registerSettingsTab();
-        // The game's PC SETTINGS entry (runtime/amp_menu.cpp) opens the settings on the Amplitude tab.
-        amp::options::setOpenSettings([] { bozo::app::requestSettings("Amplitude"); });
+        // The game's PC SETTINGS pages (runtime/amp_menu.cpp): widescreen applied to the window, the window's slots.
+        amp::options::setWidescreenHook([](bool on) { bozo::app::setPictureAspect(on ? 16.0f / 9.0f : 0.0f); });
+        amp::options::setStateSlots([] { return bozo::app::stateSlot(); }, [](int slot) { bozo::app::setStateSlot(slot); },
+                                    [](int slot) { return bozo::app::stateSlotSummary(slot); });
         bozo::app::setPictureAspect(amp::options::widescreen() ? 16.0f / 9.0f : 0.0f);
         game.framesEnded = [&] { return host.framesEnded(); };
         game.saveState = [&](int slot) { host.requestSave(bozo::app::stateSlotPath(slot)); };

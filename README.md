@@ -77,8 +77,8 @@ Captured from the current build at 960x720.
 | ![Select a song](docs/screenshots/select-song.jpg) | ![The warp into the song](docs/screenshots/song-intro.jpg) | ![Boom, in Neotropolis](docs/screenshots/gameplay.jpg) |
 | ![Tracks turned on, the score climbing](docs/screenshots/gameplay-score.jpg) | ![Player stats after the song](docs/screenshots/player-stats.jpg) | ![Elektro Kore: Cool Baby](docs/screenshots/gameplay-elektro-kore.jpg) |
 | ![Two players](docs/screenshots/gameplay-2p.jpg) | ![Four players (multitap)](docs/screenshots/gameplay-4p.jpg) | ![Remix mode](docs/screenshots/remix.jpg) |
-| ![Duel](docs/screenshots/duel.jpg) | ![Basic training, the blasters' glows](docs/screenshots/gameplay-training.jpg) | ![PC SETTINGS in the Options menu](docs/screenshots/options-pc-settings.jpg) |
-| ![PC SETTINGS in the pause menu](docs/screenshots/pause-pc-settings.jpg) | | |
+| ![Duel](docs/screenshots/duel.jpg) | ![Basic training, the blasters' glows](docs/screenshots/gameplay-training.jpg) | ![PC SETTINGS' pages in the Options menu](docs/screenshots/options-pc-settings.jpg) |
+| ![PC SETTINGS in the pause menu](docs/screenshots/pause-pc-settings.jpg) | ![PC SETTINGS' VIDEO page, drawn by the game](docs/screenshots/pc-settings-video.jpg) | |
 
 ## Goal
 
@@ -148,9 +148,11 @@ runner prints where the game stops and what is not native yet. Play-test switche
 `AMP_INFINITE_ENERGY`, `AMP_AUTOPILOT`, `--pad-script2`..`4` for players 2-4) and a pad script that reaches a song are in
 [docs/RECOMP_NOTES.md](docs/RECOMP_NOTES.md#gameplay).
 
-The game's own Options menu and pause menu have a **PC SETTINGS** entry: it opens the Amplitude tab below (the video
-options, the cheats, save states and quitting), steered with the gamepad. The port builds it at startup from your disc
-(the menus' files edited in memory; `AMP_NO_PC_MENU=1` keeps the game's own).
+The game's own Options menu and pause menu have a **PC SETTINGS** entry, and behind it pages the game itself draws in
+its menus, with its font and cursor: VIDEO (widescreen, sharper effects, the audio offset), CHEATS (autopilot,
+infinite energy, unlock all), SAVE STATES (the slot, save, load) and QUIT GAME (press X twice). Up / Down choose,
+Cross acts, Left / Right change a value, Triangle or Circle go back. The port builds the entry at startup from your
+disc (the menus' files edited in memory; `AMP_NO_PC_MENU=1` keeps the game's own). The controls are rebound in F2.
 
 In the window, F2 (or a gamepad's middle button) opens the settings: Controls, Video (window mode, resolution, render
 scale), Save states, and an Amplitude tab with widescreen (16:9: the 3D through a wider camera, the HUD and menus kept
