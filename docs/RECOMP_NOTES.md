@@ -506,6 +506,31 @@ feeder `0x1af548` (`sceMpegDemuxPss`), about 1000 times a picture; somewhere in 
 0.9 field a picture (an idle advance to the next vblank while the thread waits for its picture is the likely one).
 That is BozoEngine's: how its paced libmpeg waits and what the kernel's idle does then.
 
+Found and fixed (the frame ends and library calls traced over three pictures). Not libmpeg: the movie thread never
+idles and `sceMpegGetPicture` never waits. The player paces itself. As a picture goes up (`0x1aee90`) it starts the
+EE's timer 0 on hblanks (T0_MODE `0x83`, T0_COUNT 0), then calls the feeder (each call a `sceMpegDemuxPssRing` that
+takes nothing, about 9,400 cycles apart) until T0_COUNT reaches 500 hblanks (1.905 fields, `0x1aeff0`). Then it
+calls `sceGsSyncV` until the parity it returns is even (`0x1af028`) and shows the picture with `sceGsPutDispEnv`.
+On the console `sceGsSyncV` waits for the next vblank, the 0.1 field left: two fields a picture. BozoEngine's
+`sceGsSyncV` ends the game frame at once (held to the frame period after the last frame end) and returns the parity of
+the frames ended. The port ended a second frame at `sceGsPutDispEnv`, 8 cycles later, held to a whole period: 1.905 +
+1 = 2.91 fields a picture. (Ended at `sceGsSyncV` alone, the frames' parity flips each picture, so every other
+picture ends two frames, the second held a period: still 1.45 times.)
+
+The fix, in two parts:
+
+- **BozoEngine** (`Libraries::syncVWaitsForVblank`, opt-in): `sceGsSyncV` takes the EE clock on to the next vblank's
+  start and returns that field's parity.
+- **The port:** turns the option on, and its `sceGsPutDispEnv` publishes the picture without ending a frame
+  (`gs::flip(..., false)`).
+
+A picture is now two fields of EE time and one frame (the intro: 300 pictures in 10.01 s of EE time, 2 vblanks each).
+The movie's sound runs the length of its pictures and fades out as the last ones play, and the title's music starts
+right after. In the window, the frame pacer holds a frame that spans two periods of EE time for two periods
+(`amp_main.cpp`), so the movie shows each picture for two refreshes: 300 pictures in 10.0 s of real time. Only the
+movie player calls `sceGsSyncV` (about 2,880 calls from boot to the menus, one a picture, plus a few in the boot at
+`0x210bb8`), so the game's own frames (the flip `0x21b248`) are untouched.
+
 ## Where it stands
 
 The game boots through the logos and the intro movie (with its music) to the title screen, the menus, the FreQmaker,
@@ -516,8 +541,7 @@ the stream fix; not compared with the console yet).
 
 ## Next steps
 
-1. The boot's and the intro movie's EE time running 1.45 times ahead of the frames (its sound dropped, ending
-   early); the main menu's black wedge against the console.
+1. The main menu's black wedge against the console.
 2. Timing: input and sound against the beat, compared with the console.
 3. Native draws: the renderer answered at its own functions instead of through VIF1 / VU1 / GIF.
 4. Upstream to BozoEngine: the IRX translator fix and the mixer's output IRQ are merged; still a native `sceIoctl`

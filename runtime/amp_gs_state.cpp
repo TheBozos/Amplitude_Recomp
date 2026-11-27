@@ -1550,7 +1550,7 @@ namespace amp::gs
     }
 
     // The frame shown (DISPFB's FBP) published: its draws as the overlay, mapped by the context's XYOFFSET.
-    void flip(Runtime *rt, R5900Context *ctx, uint64_t dispfb, uint64_t display)
+    void flip(Runtime *rt, R5900Context *ctx, uint64_t dispfb, uint64_t display, bool endsFrame)
     {
         ++g_flips;
         auto &renderer = bozo::render::Renderer::instance();
@@ -1735,7 +1735,8 @@ namespace amp::gs
         prof::flip();
         if (static const bool onShinoChecksum = std::getenv("AMP_CHECKSUM") != nullptr; onShinoChecksum && g_flips % 500 == 0)
             std::printf("[amp:checksum] flip %llu %016llx\n",(unsigned long long)g_flips, (unsigned long long)g_checksum);
-        bozo::port::frameEnd(rt, ctx);
+        if (endsFrame)
+            bozo::port::frameEnd(rt, ctx);
     }
 
     uint64_t flips() { return g_flips; }

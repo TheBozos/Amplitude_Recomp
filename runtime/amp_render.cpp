@@ -284,13 +284,19 @@ namespace amp
             gs::flip(rt, ctx, rd64(env + 0x10), rd64(env + 0x18));
         }
         // sceGsPutDispEnv(disp) (0x30f7b0): the movie player 0x1aec48 shows each picture with it (PMODE, SMODE2,
-        // DISPFB, DISPLAY, BGCOLOR at +0, +8, +0x10, +0x18, +0x20): a flip, as 0x21b248 is the renderer's.
+        // DISPFB, DISPLAY, BGCOLOR at +0, +8, +0x10, +0x18, +0x20): the picture published as 0x21b248's flip publishes
+        // the renderer's, but the frame not ended here. The player paces itself: it starts the EE's timer 0 on hblanks
+        // as a picture goes up, feeds the decoder until 500 hblanks have passed (1.9 fields), then calls sceGsSyncV
+        // (the console's wait for the next vblank: Libraries::syncVWaitsForVblank) until the field's parity is even,
+        // then shows the picture here: two fields a picture. A frame also ended here, 8 cycles after sceGsSyncV's,
+        // was held to a whole frame period: three fields a picture, the logos' and the intro's EE time (which their
+        // sound follows) 1.45 times the pictures', their sound ended long before the movie's last picture.
         void putDispEnv(uint8_t *, R5900Context *ctx, Runtime *rt)
         {
             const uint32_t disp = ctx->r[4].uw[0];
             ctx->r[2].ud[0] = 0;
             ctx->pc = ctx->r[31].uw[0];
-            gs::flip(rt, ctx, rd64(disp + 0x10), rd64(disp + 0x18));
+            gs::flip(rt, ctx, rd64(disp + 0x10), rd64(disp + 0x18), false);
         }
 
         // sceGsPutDrawEnv(packet) (0x30fb60): the drawing environment (FRAME, ZBUF, XYOFFSET, SCISSOR, ...), a GIF tag

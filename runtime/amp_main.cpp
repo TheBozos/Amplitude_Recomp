@@ -164,6 +164,9 @@ int main(int argc, char **argv)
     // writes TMB's fixed addresses and takes 0x600 bytes from its heap. The stream callbacks' 32-byte entries still come
     // from that heap (the SDK demux, sdkDemux, stalls Amplitude's movie: its sound callback is not Shinobido's).
     host.libraries().mpegOptions.referenceLayout = false;
+    // The movie player waits 500 hblanks on timer 0, then sceGsSyncV: two fields a picture with the console's wait for
+    // the vblank (amp_render.cpp, putDispEnv).
+    host.libraries().syncVWaitsForVblank = true;
     // The movie player takes a short sceCdStRead (no wait) for a whole one and skipped a sector: its sound packet
     // lost, every sample after it a byte off (the intro's sound was white noise). Reads bring all their sectors or
     // none (CdState::wholeStreamReads).
@@ -229,7 +232,18 @@ int main(int argc, char **argv)
                 last = v;
             }
         }
-        pacer.frameEnd();
+        // Held to the frame's span of EE time in periods of the cap: one for the game's frames (each held to the frame
+        // period), two for a movie's picture (two fields: the movie player's frame ends at its sceGsSyncV, amp_render.cpp
+        // putDispEnv), so the window shows it for two refreshes as the console does instead of playing it at twice its
+        // speed. At most two: a longer frame (a load's leap) is not made to wait out its EE time.
+        {
+            static uint64_t lastCycles = 0;
+            const uint64_t now = d.now(), span = lastCycles && now > lastCycles ? now - lastCycles : 0;
+            lastCycles = now;
+            pacer.frameEnd();
+            if (span * 2 >= options.framePeriodCycles * 3)
+                pacer.frameEnd();
+        }
         amp::traceSound(f);
         if (f % 60 == 0)
             std::printf("[amp] frame=%llu pc=%x cycles=%llu\n", (unsigned long long)f, ctx->pc,
