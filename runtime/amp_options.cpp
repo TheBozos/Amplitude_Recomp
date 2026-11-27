@@ -17,6 +17,7 @@ namespace amp::options
     {
         std::atomic<bool> g_widescreen{false};
         std::atomic<int> g_imageScale{1};
+        std::atomic<int> g_audioOffsetMs{50};
         std::array<std::atomic<bool>, static_cast<size_t>(Cheat::Count)> g_cheats{};
         // What a cheat set in the game's memory, to put back when it is turned off (the address written, 0: nothing).
         std::array<uint32_t, static_cast<size_t>(Cheat::Count)> g_applied{};
@@ -68,6 +69,9 @@ namespace amp::options
     int imageScale() { return g_imageScale.load(std::memory_order_relaxed); }
     void setImageScale(int scale) { g_imageScale.store(scale < 1 ? 1 : scale > 4 ? 4 : scale, std::memory_order_relaxed); }
 
+    int audioOffsetMs() { return g_audioOffsetMs.load(std::memory_order_relaxed); }
+    void setAudioOffsetMs(int ms) { g_audioOffsetMs.store(ms < -100 ? -100 : ms > 300 ? 300 : ms, std::memory_order_relaxed); }
+
     bool cheat(Cheat c) { return g_cheats[static_cast<size_t>(c)].load(std::memory_order_relaxed); }
     void setCheat(Cheat c, bool on) { g_cheats[static_cast<size_t>(c)].store(on, std::memory_order_relaxed); }
 
@@ -104,6 +108,8 @@ namespace amp::options
         setWidescreen(envOn("AMP_WIDESCREEN"));
         if (const char *scale = std::getenv("AMP_IMAGE_SCALE"); scale && *scale)
             setImageScale(std::atoi(scale));
+        if (const char *offset = std::getenv("AMP_AUDIO_OFFSET"); offset && *offset)
+            setAudioOffsetMs(std::atoi(offset));
         setCheat(Cheat::Autopilot, envOn("AMP_AUTOPILOT"));
         setCheat(Cheat::UnlockAll, envOn("AMP_UNLOCK_ALL"));
         setCheat(Cheat::InfiniteEnergy, envOn("AMP_INFINITE_ENERGY"));
@@ -122,6 +128,8 @@ namespace amp::options
                 setWidescreen(value == "1");
             else if (key == "image_scale" && !std::getenv("AMP_IMAGE_SCALE"))
                 setImageScale(std::atoi(value.c_str()));
+            else if (key == "audio_offset_ms" && !std::getenv("AMP_AUDIO_OFFSET"))
+                setAudioOffsetMs(std::atoi(value.c_str()));
         }
     }
 
@@ -134,6 +142,7 @@ namespace amp::options
         out << "# Amplitude's options (the window's Amplitude tab, F2)\n";
         out << "widescreen=" << (widescreen() ? 1 : 0) << "\n";
         out << "image_scale=" << imageScale() << "\n";
+        out << "audio_offset_ms=" << audioOffsetMs() << "\n";
     }
 
     void setQuit(std::function<void()> quit)

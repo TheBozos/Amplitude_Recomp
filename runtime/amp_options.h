@@ -21,6 +21,13 @@ namespace amp::options
     int imageScale();
     void setImageScale(int scale);
 
+    // The sound's lag the song's clock allows for (ms): the game times the gems and judges the hits on the EE's clock
+    // since the song started (its task manager's timer), as if the music were heard as it is mixed; the port's sound
+    // is heard some 50 ms later (the output's queue and the device). The clock is held back by this much
+    // (AMP_AUDIO_OFFSET, or the Amplitude tab; 0: as the console).
+    int audioOffsetMs();
+    void setAudioOffsetMs(int ms);
+
     enum class Cheat
     {
         Autopilot,      // the game's own autopilot: it plays the gems itself

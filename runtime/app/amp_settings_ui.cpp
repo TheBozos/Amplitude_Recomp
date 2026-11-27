@@ -29,6 +29,16 @@ namespace amp::options
             ImGui::TextDisabled("The pictures the game draws into textures (the track's surface, the monitors) at twice\n"
                                 "their console size. The 3D's own resolution is the Video tab's render scale.");
 
+            ImGui::SeparatorText("Sound");
+            int offset = audioOffsetMs();
+            ImGui::SetNextItemWidth(260);
+            if (ImGui::SliderInt("Audio offset (ms)", &offset, 0, 200))
+                setAudioOffsetMs(offset);
+            if (ImGui::IsItemDeactivatedAfterEdit())
+                save();
+            ImGui::TextDisabled("How late the sound reaches you. The gems and the hits follow the music you hear:\n"
+                                "raise it if you must hit early to score, lower it if you must hit late.");
+
             ImGui::SeparatorText("Cheats");
             bool autopilot = cheat(Cheat::Autopilot);
             if (ImGui::Checkbox("Autopilot", &autopilot))

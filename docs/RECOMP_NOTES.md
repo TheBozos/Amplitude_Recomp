@@ -457,8 +457,14 @@ slot 13). But only the menu music's transitions read it (`0x197224`, `0x197334`:
 reads its own `lag_ms` too): up to a song, the gameplay never asks for it. So the gems and the hits are judged on the
 game's clock with no lag allowed for, and what is heard comes 55-60 ms after. `ClockSyncTask` (`0x25c660`-`0x25c728`,
 vtable `0x3d499c`) is the online play's clock sync (the player's name, the network objects at `0x3b0af0`), not the
-sound's. Next: the song's clock (what the gems and the judgement read), to give it the output's lag, or an offset the
-player sets.
+sound's. The song's clock is the task manager's (the global at `0x436218`, its poll `0x2827f0`): its timer at `+0x28`
+(`0x436240`) gives milliseconds from the EE's cycle counter (`0x282c70`: COP0 Count accumulated at `0x3b2260`, the
+cycles a millisecond at `0x3b2258`), not from the sound; the poll keeps them at `+0x18` (beats at `+0x1c` through the
+tempo), the time the tasks reach at `+0x10` (`0x436228`, the HUD's copy `0x43b734`: 16.683 ms a frame, an NTSC field).
+The gems, the judgement and the HUD all follow it. The audio offset (`amp_options`, the Amplitude tab's slider,
+`AMP_AUDIO_OFFSET`, 50 ms by default) is taken off that timer's answer (an override on `0x282c70` for the timer at
+`0x436240` only): with 50, the clock at a given frame reads 50 ms less (28261.3 against 28211.3 at frame 13730 of the
+training song) and the song plays on as before. Whether 50 is right on a given PC is the player's ear (the slider).
 **Widescreen and the player's options** (`runtime/amp_options.*`, the window's Amplitude tab
 `runtime/app/amp_settings_ui.cpp`). The camera is PsCam (`0x2128f0`, vtable `0x3d2950` slot 3, the camera selected at
 `*0x3b0988`): it builds the view-projection `0x43c200` from its projection (`+0x160`) and world (`+0x120`), and

@@ -49,7 +49,7 @@ with its sound, the track's surface and the HUD's monitor drawn by render-to-tex
 | FreQs drawn whole (the game's VU0 microprograms) | ✅ |
 | Full speed: the VU1 programs compiled to C++ (60 frames a second with room to spare) | ✅ |
 | The title's and menus' glows and highlighted labels (were white blotches) | ✅ |
-| Input and sound timing checked against the console | ⏳ |
+| Sound timing: the song's clock held back to the music as the PC plays it (an audio offset, adjustable) | ✅ |
 | Save states (in the window: save and load slots) | ✅ |
 | Memory-card saves (the FreQs and the progress, in `%APPDATA%\Amplitude_Recomp`, or a `user` folder next to the executable) | ✅ |
 | Every arena's songs, two players (Multiplayer, Game) | ✅ |
@@ -148,9 +148,10 @@ runner prints where the game stops and what is not native yet. Play-test switche
 
 In the window, F2 (or a gamepad's middle button) opens the settings: Controls, Video (window mode, resolution, render
 scale), Save states, and an Amplitude tab with widescreen (16:9: the 3D through a wider camera, the HUD and menus kept
-4:3 in the middle), sharper effects (the render-to-texture pictures at twice their size), the cheats (the game's own
+4:3 in the middle), sharper effects (the render-to-texture pictures at twice their size), an audio offset (the gems
+and the hits held back to the music as the PC plays it, 50 ms by default), the cheats (the game's own
 autopilot, infinite energy, every arena and song unlocked) and quitting the game. The graphics options are kept in
-`amplitude.ini` in the user folder; `AMP_WIDESCREEN=1`, `AMP_AUTOPILOT=1`, `AMP_INFINITE_ENERGY=1` and
+`amplitude.ini` in the user folder; `AMP_WIDESCREEN=1`, `AMP_AUDIO_OFFSET=<ms>`, `AMP_AUTOPILOT=1`, `AMP_INFINITE_ENERGY=1` and
 `AMP_UNLOCK_ALL=1` set them from the environment.
 
 The player's files (save states, memory cards, settings) go to `%APPDATA%\Amplitude_Recomp`, or to a folder named

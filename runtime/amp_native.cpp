@@ -662,6 +662,17 @@ namespace amp
             std::memcpy(ram + ((camera + 0x2c0u) & 0x1FFFFFFu), kept, sizeof kept);
         }
 
+        // The task manager's timer (0x282c70: a Timer's milliseconds, the EE's cycle counter since it started; the task
+        // manager at 0x436218 polls its own, +0x28, for the song's clock the gems and the judgement follow). Held back by
+        // the audio offset (amp_options.h): the gems and the judgement then follow the music as it is heard.
+        void songClock(uint8_t *ram, R5900Context *ctx, Runtime *rt)
+        {
+            const uint32_t timer = ctx->r[4].uw[0];
+            func_0x282c70(ram, ctx, rt);
+            if (timer == 0x436240u)
+                ctx->f[0] -= static_cast<float>(options::audioOffsetMs());
+        }
+
     } // namespace
 
     bool native::program(uint32_t pcBytes, const uint8_t *vuData, uint32_t top, uint32_t &tpc)
@@ -773,5 +784,6 @@ namespace amp
     {
         r.registerFunction(0x215f30, meshDraw); // the PS2 mesh's draw (AMP_TRACE_MESHES)
         r.registerFunction(0x232b30, visible);  // a drawable's visibility test (widescreen: the planes widened)
+        r.registerFunction(0x282c70, songClock); // a Timer's time (the song's clock: the audio offset)
     }
 } // namespace amp
