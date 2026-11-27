@@ -1613,11 +1613,14 @@ namespace amp::gs
                 while ((1u << th) < height) ++th;
                 const uint64_t tex0 = uint64_t(fbp * 32u) | uint64_t(std::max(fbw, 1u)) << 14 | uint64_t(psm) << 20 |
                                       uint64_t(tw) << 26 | uint64_t(th) << 30;
-                // Widescreen: the movie's 4:3 picture kept 4:3 in the middle of the 16:9 frame.
+                // The picture alone: the display's width and height of the texture (rounded up to powers of two: 1024 x 512
+                // for a 640 x 448 picture), the rest never shown. Widescreen: kept 4:3 in the middle of the 16:9 frame.
+                // (The whole texture drawn, its padding past the picture fell inside a widescreen frame: a strip of stale
+                // pictures at the right, and in a 4:3 window's letterbox below.)
                 const float sx = options::clipScaleX();
                 if (const std::shared_ptr<Texture> &picture = texture(tex0))
-                    renderer.setBackdrop(picture, screen, screen.width * (1.0f - sx) * 0.5f, 0.0f, float(1u << tw) * sx,
-                                         float(1u << th));
+                    renderer.setBackdrop(picture, screen, screen.width * (1.0f - sx) * 0.5f, 0.0f, screen.width * sx, screen.height,
+                                         false, screen.width / float(1u << tw), screen.height / float(1u << th));
             }
             else
                 renderer.clearBackdrop();
