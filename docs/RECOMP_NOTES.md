@@ -488,6 +488,14 @@ The gems, the judgement and the HUD all follow it. The audio offset (`amp_option
 `AMP_AUDIO_OFFSET`, 50 ms by default) is taken off that timer's answer (an override on `0x282c70` for the timer at
 `0x436240` only): with 50, the clock at a given frame reads 50 ms less (28261.3 against 28211.3 at frame 13730 of the
 training song) and the song plays on as before. Whether 50 is right on a given PC is the player's ear (the slider).
+
+The input adds nothing to that, by the code. The window samples the pads once a loop, right after each present
+(`DevicePad::update`, BozoEngine's `window.cpp`). The present is waited out (`glFinish` after the swap), so the
+driver queues no frames ahead of the display. The game's `scePadRead` takes the latest state whenever it polls. That
+is the console's own scheme: libpad samples the pads once a vblank, and the game reads the last sample. A press thus
+reaches the game within a refresh, as on the console, and is judged against the same clock as the gems. What the PC
+adds is the sound's output latency, which the audio offset takes off the clock, and the display's own latency (the
+monitor's), which no setting here can see. Measured against a console: not done (no reference capture).
 **Widescreen and the player's options** (`runtime/amp_options.*`, the window's Amplitude tab
 `runtime/app/amp_settings_ui.cpp`). The camera is PsCam (`0x2128f0`, vtable `0x3d2950` slot 3, the camera selected at
 `*0x3b0988`): it builds the view-projection `0x43c200` from its projection (`+0x160`) and world (`+0x120`), and
@@ -568,7 +576,8 @@ gone).
 
 ## Next steps
 
-1. Timing: input and sound against the beat, compared with the console.
+1. Timing against a console: the sound is held to the clock (the audio offset) and the input path adds no delay of its
+   own (above); a recording from a console would tell whether 50 ms is the right default.
 2. Upstream to BozoEngine: all merged. That covers the IRX translator fix, the mixer's output IRQ, and these:
    - #150: the `sceIoctl` status poll, `sceSifInitCmd`, and reads of a stream ring that bring all their sectors or
      none (`CdState::wholeStreamReads`).
