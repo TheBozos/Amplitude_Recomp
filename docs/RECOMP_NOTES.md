@@ -108,7 +108,7 @@ Further stops on the way to the title, each answered the same way:
 | bind loop on `0x75433178` (`0x24d360`) | the sound set-up waits for SYNTH_S's RPC server | the sound modules compiled and run (below) |
 | syscalls 120 (`sceSifSetDChain`) and 122 (`sceSifGetReg`, from `sceSifInitCmd`) | SIF set-up the engine has nothing to do for | `sceSifSetDChain`, `isceSifSetDChain`, `sceSifInitCmd` do nothing |
 | bind loop in `_lf_bind` (`0x253438`) | the network configuration's clients: `sceSifSearchModuleByName("eznetcnf")`, then EZNCNF_S's `0x75499128` and EZNCTL_S's `0x75488909` | online play is out of scope: `0x26c648` and `0x26c8f8` do nothing (their results are ignored) |
-| a null command after the intro (`0x282910`) | the task manager's list header (`0x549ea0`, the first heap block) overwritten from frame 467: native allocations on the game's heap | the engine's heap moved (below) |
+| a null command after the intro (`0x282910`) | the task manager's list header (`0x549ea0`, the first heap block) overwritten from frame 467: native allocations on the game's heap | libmpeg's entries from its work area (below) |
 | IPU register writes in `0x216a18` | the Movie class: the animated textures, decoded on the IPU | native IPU pictures (below) |
 
 ## Drawing (bring-up path)
@@ -169,8 +169,9 @@ interpreter runs them all).
 - The engine's heap (native allocations: libmpeg's 32-byte stream callback entries) defaulted to the region after
   `.bss`, where the game's own allocator works: both handed out the same memory, the task manager's list header
   (`0x549ea0`) was overwritten from the movie's first frame, and the task run after the intro had a null command. The
-  runner gives the engine 32 KB inside `.text` (`0x101000-0x109000`: recompiled code, never read as data), and
-  `_calloc_r` stays the game's own code (`recomp/amp_guest_names.txt`: its malloc and free could not be named).
+  runner gave the engine 32 KB inside `.text` (`0x101000-0x109000`) until BozoEngine #161: off the reference layout,
+  libmpeg now takes those entries from the end of the work area the game gives `sceMpegCreate`, nothing from the
+  heap, and the move is gone. `_calloc_r` stays the game's own code (`recomp/amp_guest_names.txt`: its malloc and free could not be named).
   libmpeg's SDK demux (`sdkDemux`) stalls this movie (its sound callback is not Shinobido's): left off.
 - **The movie's sound was white noise** (logos, intro, then a noise loop on the title). The player reads the stream 8
   sectors at a time without waiting (`sceCdStRead` mode 0, `0x1afa38`) and gives them to `sceMpegDemuxPss` in as many
@@ -553,12 +554,12 @@ gone).
 ## Next steps
 
 1. Timing: input and sound against the beat, compared with the console.
-2. Upstream to BozoEngine: the IRX translator fix and the mixer's output IRQ are merged. Open:
+2. Upstream to BozoEngine: all merged. That covers the IRX translator fix, the mixer's output IRQ, and these:
    - #150: the `sceIoctl` status poll, `sceSifInitCmd`, and reads of a stream ring that bring all their sectors or
      none (`CdState::wholeStreamReads`).
    - #160: `sceGsSyncV`'s wait for the vblank.
-   - #161: libmpeg's stream callback entries from the work area off the reference layout. Once it is merged, the
-     port's heap move into `.text` (`amp_main.cpp`) can go: checked, the boot reaches the menu without it.
+   - #161: libmpeg's stream callback entries from the work area off the reference layout (the port's heap move
+     dropped).
 
    libmpeg's default stays TMB's reference layout: TMB and the engine's reference checks rely on it, and every other
    port with movies (Onimusha, Shinobido, Amplitude) sets `referenceLayout = false`.

@@ -171,10 +171,6 @@ int main(int argc, char **argv)
     // lost, every sample after it a byte off (the intro's sound was white noise). Reads bring all their sectors or
     // none (CdState::wholeStreamReads).
     host.libraries().cd.wholeStreamReads = true;
-    // The engine's own heap (libmpeg's callback entries, any native allocation): 32 KB inside .text, which runs
-    // recompiled and is never read as data. Its default, from the heap start to the end of RAM, is where the game's own
-    // allocator works: both handed out the same memory (the task manager's list header at 0x549ea0 was overwritten).
-    host.libraries().heap.reset(0x101000, 0x109000);
     d.setFunctions(amp_function_table, amp_function_count, amp_resume_table, amp_resume_count);
     bozo::port::Registry registry;
     amp::install(d.runtime(), registry);
