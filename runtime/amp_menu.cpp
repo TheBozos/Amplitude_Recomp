@@ -131,6 +131,7 @@ namespace amp
         {
             Page page = Page::Off;
             uint32_t panel = 0;
+            bool options = false;               // the Options panel (o_main): its help line follows the rows
             std::vector<uint32_t> components;   // the panel's rows, in its navigator's order
             std::vector<std::string> originals; // their labels, put back on leaving
             size_t offset = 0;                  // the page's first item shown
@@ -355,13 +356,19 @@ namespace amp
 
         // ---- The panel ---------------------------------------------------------------------------------------------
 
-        // The rows of the two panels, as their navigators order them (meta.ui, and the PC SETTINGS row added).
+        // The rows of the panels with PC SETTINGS, as their navigators order them (meta.ui, and the PC SETTINGS row
+        // added): the Options menu, the pause menus of a solo song, of solo Remix, of a multiplayer song (the training
+        // uses it too) and of multiplayer Remix.
         const std::vector<std::string> *rowsOf(const std::string &panel)
         {
-            static const std::vector<std::string> options = {"game", "memcard", "credits", "pc_settings"};
-            static const std::vector<std::string> pause = {"resume", "quit", "restart", "controller_config", "game_settings",
-                                                           "pc_settings"};
-            return panel == "o_main" ? &options : panel == "s_pause" ? &pause : nullptr;
+            static const std::map<std::string, std::vector<std::string>> rows = {
+                {"o_main", {"game", "memcard", "credits", "pc_settings"}},
+                {"s_pause", {"resume", "quit", "restart", "controller_config", "game_settings", "pc_settings"}},
+                {"s_r_pause", {"resume", "quit", "controller_config", "game_settings", "pc_settings"}},
+                {"m_g_pause", {"resume", "quit", "restart", "pc_settings"}},
+                {"m_r_pause", {"resume", "quit", "pc_settings"}}};
+            const auto it = rows.find(panel);
+            return it == rows.end() ? nullptr : &it->second;
         }
 
         // The panel's components by name: its map's tree walked from the root.
@@ -383,7 +390,7 @@ namespace amp
             return it == g_pages.components.end() ? 0 : static_cast<size_t>(it - g_pages.components.begin());
         }
 
-        bool hasHelp() { return inRam(g_helpText) && g_pages.components.size() == 4; } // the Options panel's help line
+        bool hasHelp() { return inRam(g_helpText) && g_pages.options; } // the Options panel's help line
 
         std::string currentHelp(const uint8_t *ram)
         {
@@ -431,7 +438,8 @@ namespace amp
 
         bool enter(Call &call, const uint8_t *ram, uint32_t panel)
         {
-            const std::vector<std::string> *rows = rowsOf(text(ram, word(ram, panel + 0xcu)));
+            const std::string name = text(ram, word(ram, panel + 0xcu));
+            const std::vector<std::string> *rows = rowsOf(name);
             const uint32_t header = word(ram, panel + kComponents);
             if (!rows || !inRam(header))
                 return false;
@@ -440,6 +448,7 @@ namespace amp
             Pages p;
             p.page = Page::Main;
             p.panel = panel;
+            p.options = name == "o_main";
             for (const std::string &name : *rows)
             {
                 const auto it = byName.find(name);

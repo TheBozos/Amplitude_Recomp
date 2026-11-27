@@ -627,17 +627,22 @@ scene's object (`s_pause_01_but`), with its `(navigator (vertical ...))` order a
 its panels and its `screen_transitions` (button, screen). The labels come from `gen/english_screens.txt.bin` and the
 help lines from `gen/english_messages.txt.bin`, both the same format, keyed by object name and by
 `<panel>_<button>_HELP`. A button's object is a Text and a Mesh (its highlight) in the panel's scene,
-`metagame/o_main.rnd` or `metagame/s_pause.rnd`. That scene is Harmonix's container: magic `AFDEBECC`, the header's
+`metagame/o_main.rnd` or a pause panel's (`s_pause.rnd`, a solo song's; `s_r_pause.rnd`, solo Remix's;
+`m_g_pause.rnd`, a multiplayer song's, which the training uses too; `m_r_pause.rnd`, multiplayer Remix's). That scene is Harmonix's container: magic `AFDEBECC`, the header's
 length, the blocks (1), the whole size, the block's size, padded with `0xCC`, then one gzip stream. Inside is a
 directory: version 10, the objects' (type, name), then each object's data ending with `AD DE AD DE`.
 
 **The files edited** (`runtime/amp_menu_files.cpp`, at startup, from the player's disc):
 
-- A button after each panel's last, its name added to the navigator.
-- Its Text and Mesh cloned from the last button's a row lower (24 units: the Mesh's local y at +0x30 and world z at
-  +0x64, the Text's world z), the Text saying PC SETTINGS.
+- A button after each panel's last, its name added to the navigator: the Options panel and the four pause panels.
+- Its Text and Mesh cloned from the last button's a row lower (the panel's own row spacing, the last two rows' local
+  y apart: 22 to 28 units; the Mesh's local y at +0x30 and world z at +0x64, the Text's world z), the Text saying
+  PC SETTINGS.
 - The clones added to the background's children and the view's draw lists.
 - The panel, its glow and its background a row taller (their vertices below the middle moved down).
+- The multiplayer pause panels (and so the training's) are 146 units wide against the solo pause panel's 363: every
+  mesh of theirs is widened to it first (the vertices right of the middle moved right, those left moved left), or
+  the pages' lines ran past the panel.
 - The Options panel's help line, `o_main_pc_settings_HELP`.
 
 **The window's video settings.** The port never set `WindowOptions::videoSettings` or called
@@ -659,8 +664,8 @@ padded with zeros, over whatever sectors the engine read for that file.
   a screen's lists by them.
 - The scenes are recompressed with zlib (level 9). Their container header is written 32 bytes long instead of 216,
   since the game goes by its length field. With that, a scene with two more objects fits: 3,301 of 3,452 bytes for
-  the Options panel, 2,960 of 3,172 for the pause panel.
-- If the disc is not the one expected or an edit does not fit, all four files stay the game's.
+  the Options panel, 2,960 of 3,172 for the solo pause panel (the other pause panels have about as much room).
+- If the disc is not the one expected or an edit does not fit, all the files stay the game's.
 
 **The entry's press** (`runtime/amp_menu.cpp`). The game has nothing for `pc_settings` to do: it has no transition, and
 selecting it does nothing. Following the press handler was a dead end. The transitions are resolved to screen objects
@@ -686,7 +691,8 @@ call hook that matched the names' addresses in a0-a3 and in what they point to).
   Circle, Start, Select and Square are written back as released in `scePadRead`'s data while a page is up. A button
   the pages took stays hidden until it is released: the game reads the pad more than once a frame, and a Triangle that
   left the pages also left the Options menu before this.
-- *Scrolling.* A page longer than the panel's rows (4 in Options, 6 in the pause menu) scrolls, with `^` before the
+- *Scrolling.* A page longer than the panel's rows (4 in Options, 6 in a solo song's pause menu, 3 to 5 in the
+  others) scrolls, with `^` before the
   top row when items are above and `v` after the bottom row when items are below. Up and Down are the port's: a press,
   then a repeat while held (from 18 frames, every 5). Each one either scrolls the list at the panel's edge, or is given
   to the game as one press (a frame pressed, a frame released) to move its cursor. The cursor stops at the list's ends.
@@ -705,7 +711,7 @@ call hook that matched the names' addresses in a0-a3 and in what they point to).
 
 `AMP_TRACE_MENU=1` prints each panel's focus as it changes. `AMP_NO_PC_MENU=1` keeps the game's own files.
 `AMP_ARK_OVERLAY_DIR=<folder>` (development) takes `meta.ui.bin`, `english_messages.txt.bin`, `o_main.rnd` and
-`s_pause.rnd` from a folder instead.
+the pause panels' `.rnd` from a folder instead.
 
 Checked, in the window:
 

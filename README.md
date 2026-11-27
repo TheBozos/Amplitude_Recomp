@@ -79,6 +79,7 @@ Captured from the current build at 960x720.
 | ![Two players](docs/screenshots/gameplay-2p.jpg) | ![Four players (multitap)](docs/screenshots/gameplay-4p.jpg) | ![Remix mode](docs/screenshots/remix.jpg) |
 | ![Duel](docs/screenshots/duel.jpg) | ![Basic training, the blasters' glows](docs/screenshots/gameplay-training.jpg) | ![PC SETTINGS' pages in the Options menu](docs/screenshots/options-pc-settings.jpg) |
 | ![PC SETTINGS in the pause menu](docs/screenshots/pause-pc-settings.jpg) | ![PC SETTINGS' VIDEO page, drawn by the game](docs/screenshots/pc-settings-video.jpg) | ![Widescreen: the HUD out at the screen's edges](docs/screenshots/gameplay-widescreen.jpg) |
+| ![PC SETTINGS in the training's pause menu](docs/screenshots/training-pause-pc-settings.jpg) | | |
 
 ## Goal
 
@@ -148,7 +149,7 @@ runner prints where the game stops and what is not native yet. Play-test switche
 `AMP_INFINITE_ENERGY`, `AMP_AUTOPILOT`, `--pad-script2`..`4` for players 2-4) and a pad script that reaches a song are in
 [docs/RECOMP_NOTES.md](docs/RECOMP_NOTES.md#gameplay).
 
-The game's own Options menu and pause menu have a **PC SETTINGS** entry, and behind it pages the game itself draws in
+The game's own Options menu and pause menus (a song's, Remix's, multiplayer's and the training's) have a **PC SETTINGS** entry, and behind it pages the game itself draws in
 its menus, with its font and cursor:
 
 - **VIDEO**: display (windowed, fullscreen, borderless) and resolution, applied by the APPLY DISPLAY row under them;

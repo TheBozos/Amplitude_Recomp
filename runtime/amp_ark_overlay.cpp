@@ -65,10 +65,13 @@ namespace amp::ark
 
     const std::vector<Known> &known()
     {
-        // The USA disc's entries (SCUS_972.58): the menus' definitions, the two panels' scenes, the messages (the help line).
+        // The USA disc's entries (SCUS_972.58): the menus' definitions, the panels' scenes, the messages (the help line).
         static const std::vector<Known> files = {{"meta.ui.bin", 0x4d2b55u, 0x2c039u},
                                                  {"o_main.rnd", 0xc9f814eu, 0xd7cu},
                                                  {"s_pause.rnd", 0xcb30990u, 0xc64u},
+                                                 {"s_r_pause.rnd", 0xcb360d6u, 0xa7bu},
+                                                 {"m_g_pause.rnd", 0x510e15u, 0xc3du},
+                                                 {"m_r_pause.rnd", 0x511a52u, 0xc0fu},
                                                  {"english_messages.txt.bin", 0x385284u, 0x1598du}};
         return files;
     }

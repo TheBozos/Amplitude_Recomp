@@ -9,18 +9,20 @@
 // - metagame/gen/meta.ui.bin (the menus' definitions, a binary DataArray: version 2, the source files' names, the root
 //   list; a list is a u16 count, a u32 id, a u32 file index, its elements' kinds 2 bits each in u32 words (0 int,
 //   1 symbol, 2 float, 3 list), then the elements, a symbol as a u32 length and its bytes): a button
-//   (button_comp pc_settings buttonStyle2 <object>) after the last of the Options panel o_main and of the pause panel
-//   s_pause, and pc_settings at the end of their navigator's vertical order. The source files' names stay: the game
+//   (button_comp pc_settings buttonStyle2 <object>) after the last of the Options panel o_main and of the pause panels
+//   (s_pause a solo song's, s_r_pause solo Remix's, m_g_pause a multiplayer song's and the training's, m_r_pause
+//   multiplayer Remix's), and pc_settings at the end of their navigator's vertical order. The source files' names stay: the game
 //   finds a screen's lists by them. Room: the demo's four error screens and dialogs.
 // - gen/english_messages.txt.bin (the same format, (key "text") lists): the Options panel's help line for it,
 //   o_main_pc_settings_HELP. Room: two demo-only messages.
-// - metagame/o_main.rnd and metagame/s_pause.rnd (the panels' scenes: Harmonix's container (magic AFDEBECC, its
+// - metagame/o_main.rnd and the four pause panels' .rnd (the panels' scenes: Harmonix's container (magic AFDEBECC, its
 //   header's length, the blocks (1), the whole size, the block's size, 0xCC to the header's length), one gzip
 //   stream, then a directory: u32 version (10), u32 count, count x (type, name), then each object's data in that order,
-//   each ending with AD DE AD DE): the last button's Text and Mesh cloned a row (24 units) lower (the Mesh's local y
-//   at +0x30 and world z at +0x64, the Text's world z), the Text saying PC SETTINGS, the Mesh among the background's
-//   children and both in the view's draw lists, and the panel, its glow and the background a row taller (their
-//   vertices below the middle, 56 bytes each, moved down). The container's header is written 32 bytes long (the
+//   each ending with AD DE AD DE): the last button's Text and Mesh cloned a row lower (the rows' own spacing; the
+//   Mesh's local y at +0x30 and world z at +0x64, the Text's world z), the Text saying PC SETTINGS, the Mesh among the
+//   background's children and both in the view's draw lists, and the panel, its glow and the background a row taller
+//   (their vertices below the middle, 56 bytes each, moved down). A narrow panel (the multiplayer pause menus'; the
+//   training's) is first widened to the solo pause panel's width, every mesh of it (the pages' lines fit). The container's header is written 32 bytes long (the
 //   original pads it to 216): the game goes by its length field, and the recompressed scene fits.
 #include "amp_ark_overlay.h"
 #include "amp_menu.h"
@@ -277,7 +279,9 @@ namespace amp::menu
                                                         {"dialog_panel", "net_load_config_error_dlg_demo"},
                                                         {"trans_error_screen", "net_load_config_error_demo"},
                                                         {"error_screen", "demo_freq_limit_error"}});
-            if (dropped != 4 || !addButton(*f->root, "o_main", "04") || !addButton(*f->root, "s_pause", "06_but"))
+            if (dropped != 4 || !addButton(*f->root, "o_main", "04") || !addButton(*f->root, "s_pause", "06_but") ||
+                !addButton(*f->root, "s_r_pause", "05") || !addButton(*f->root, "m_g_pause", "04") ||
+                !addButton(*f->root, "m_r_pause", "03"))
                 return std::nullopt;
             return writeData(*f);
         }
@@ -307,7 +311,9 @@ namespace amp::menu
         // ---- The panels' scenes ------------------------------------------------------------------------------------
 
         constexpr uint32_t kContainer = 0xCCBEDEAFu, kHeader = 32u;
-        constexpr float kRow = 24.0f;
+        // The solo pause panel's half width: the narrow panels (the multiplayer pause menus, the training's) widened to
+        // it, so PC SETTINGS' pages fit their rows.
+        constexpr float kPanelHalfWidth = 181.5f;
 
         std::optional<Bytes> inflate(const Bytes &file)
         {
@@ -504,8 +510,8 @@ namespace amp::menu
             return false;
         }
 
-        // The box a row taller: its vertices below the middle moved down.
-        bool grow(Object &o)
+        // The box a row taller: its vertices below the middle moved down by `row`.
+        bool grow(Object &o, float row)
         {
             size_t first = 0;
             uint32_t count = 0;
@@ -515,13 +521,32 @@ namespace amp::menu
             {
                 const size_t y = first + i * 56u + 4u;
                 if (f32(o.data, y) < 0.0f)
-                    putF32(o.data, y, f32(o.data, y) - kRow);
+                    putF32(o.data, y, f32(o.data, y) - row);
             }
             return true;
         }
 
-        std::optional<Bytes> editScene(const Bytes &original, const std::string &prefix, const std::string &last,
-                                       const std::string &next, const std::vector<std::string> &boxes)
+        // A mesh wider by `by` each side: its vertices right of the middle moved right, those left of it moved left (the
+        // corners keep their shape, the middle stretches).
+        bool widen(Object &o, float by)
+        {
+            size_t first = 0;
+            uint32_t count = 0;
+            if (!vertices(o.data, o.name, first, count))
+                return false;
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                const size_t x = first + i * 56u;
+                const float v = f32(o.data, x);
+                putF32(o.data, x, v > 0.0f ? v + by : v < 0.0f ? v - by : v);
+            }
+            return true;
+        }
+
+        // The panel `prefix` a PC SETTINGS row more: the last row's Text and Mesh (`last`) cloned as `next`, as far below
+        // it as it is below the row before (`previous`).
+        std::optional<Bytes> editScene(const Bytes &original, const std::string &prefix, const std::string &previous,
+                                       const std::string &last, const std::string &next, const std::vector<std::string> &boxes)
         {
             std::optional<Bytes> raw = inflate(original);
             std::optional<Scene> s = raw ? parseScene(*raw) : std::nullopt;
@@ -530,21 +555,40 @@ namespace amp::menu
             const std::string lt = prefix + last + ".txt", lm = prefix + last + ".mesh";
             const std::string nt = prefix + next + ".txt", nm = prefix + next + ".mesh";
             const std::string bg = prefix + "bg.mesh";
-            Object *text = s->find(lt), *mesh = s->find(lm);
-            if (!text || !mesh || text->data.size() < 0xa0 || mesh->data.size() < 0x70 || !s->find(bg))
+            Object *text = s->find(lt), *mesh = s->find(lm), *before = s->find(prefix + previous + ".mesh");
+            if (!text || !mesh || !before || text->data.size() < 0xa0 || mesh->data.size() < 0x70 || before->data.size() < 0x70 ||
+                !s->find(bg))
                 return std::nullopt;
+            const float row = f32(before->data, 0x30) - f32(mesh->data, 0x30);
+            if (!(row > 8.0f && row < 64.0f))
+                return std::nullopt;
+            // A narrow panel (its box short of the solo pause panel's width): every mesh of it widened to that.
+            if (Object *box = s->find(boxes.front()))
+            {
+                size_t first = 0;
+                uint32_t count = 0;
+                float half = 0.0f;
+                if (!vertices(box->data, box->name, first, count))
+                    return std::nullopt;
+                for (uint32_t i = 0; i < count; ++i)
+                    half = std::max(half, std::fabs(f32(box->data, first + i * 56u)));
+                if (half < kPanelHalfWidth - 1.0f)
+                    for (Object &o : s->objects)
+                        if (o.type == "Mesh" && o.name.rfind(prefix, 0) == 0 && !widen(o, kPanelHalfWidth - half))
+                            return std::nullopt;
+            }
             Object t{"Text", nt, text->data}, m{"Mesh", nm, mesh->data};
             replaceAll(m.data, lt, nt);
             replaceAll(m.data, lm, nm);
             // The mesh a row lower: its local y and its world z; the text's world z with it.
             const float z = f32(m.data, 0x64);
-            putF32(m.data, 0x30, f32(m.data, 0x30) - kRow);
-            putF32(m.data, 0x64, z - kRow);
+            putF32(m.data, 0x30, f32(m.data, 0x30) - row);
+            putF32(m.data, 0x64, z - row);
             bool moved = false;
             for (size_t at = 0x40; at < 0x90 && !moved; ++at)
                 if (std::fabs(f32(t.data, at) - z) < 1e-3f)
                 {
-                    putF32(t.data, at, z - kRow);
+                    putF32(t.data, at, z - row);
                     moved = true;
                 }
             // The label, after the font's name (a u32, then the text as a u32 length and its bytes).
@@ -569,7 +613,7 @@ namespace amp::menu
             if (!view || !addToList(s->find(bg)->data, lm, nm) || !addToList(view->data, lm, nm) || !addToList(view->data, lt, nt))
                 return std::nullopt;
             for (const std::string &box : boxes)
-                if (Object *o = s->find(box); !o || !grow(*o))
+                if (Object *o = s->find(box); !o || !grow(*o, row))
                     return std::nullopt;
             return deflate(buildScene(*s));
         }
@@ -604,8 +648,11 @@ namespace amp::menu
         static const Edit edits[] = {
             {"meta.ui.bin", editMetaUi},
             {"english_messages.txt.bin", editMessages},
-            {"o_main.rnd", [](const Bytes &b) { return editScene(b, "o_main_", "03", "04", {"o_main_panel.mesh", "o_main_panel_trans.mesh", "o_main_bg.mesh"}); }},
-            {"s_pause.rnd", [](const Bytes &b) { return editScene(b, "s_pause_", "05_but", "06_but", {"s_pause_panel.mesh", "s_pause_panel_trans.mesh", "s_pause_bg.mesh"}); }},
+            {"o_main.rnd", [](const Bytes &b) { return editScene(b, "o_main_", "02", "03", "04", {"o_main_panel.mesh", "o_main_panel_trans.mesh", "o_main_bg.mesh"}); }},
+            {"s_pause.rnd", [](const Bytes &b) { return editScene(b, "s_pause_", "04_but", "05_but", "06_but", {"s_pause_panel.mesh", "s_pause_panel_trans.mesh", "s_pause_bg.mesh"}); }},
+            {"s_r_pause.rnd", [](const Bytes &b) { return editScene(b, "s_r_pause_", "03", "04", "05", {"s_r_pause_panel.mesh", "s_r_pause_panel_trans.mesh", "s_r_pause_bg.mesh"}); }},
+            {"m_g_pause.rnd", [](const Bytes &b) { return editScene(b, "m_g_pause_", "02", "03", "04", {"m_g_pause_panel.mesh", "m_g_pause_panel_trans.mesh", "m_g_pause_bg.mesh"}); }},
+            {"m_r_pause.rnd", [](const Bytes &b) { return editScene(b, "m_r_pause_", "01", "02", "03", {"m_r_pause_panel.mesh", "m_r_pause_panel_trans.mesh", "m_r_pause_bg.mesh"}); }},
         };
         std::vector<std::pair<const ark::Known *, Bytes>> made;
         for (const Edit &e : edits)
