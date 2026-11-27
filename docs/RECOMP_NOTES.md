@@ -199,8 +199,9 @@ interpreter runs them all).
   -847), image 8's three lights (sub-program `0x260`) with an ambient of 0 (vf25 = 0, 0, 0, 1, as in every batch of
   the scene), its faces turned from the lights; no fog (FGE 0), normal blending (ALPHA `0x44`), a 4-bit texture
   modulated by the black vertices. VU1's own microcode (`AMP_NATIVE=0`) gives the same black, so if the console
-  draws it otherwise, the difference is in the lights the game sets up (the EE's), not in the drawing. Not settled
-  without a picture of the console's menu.
+  draws it otherwise, the difference is in the lights the game sets up (the EE's), not in the drawing. Settled: a
+  capture of the main menu from PCSX2 (a player's widescreen video) shows the same hard-edged black shape across the
+  top left. It is the scene's own, as the game draws it.
 - **Texture alpha doubled.** The decoder rescaled texel alpha to 255 (0x80 = opaque) and the renderer's shader scales
   it by 255 / 128 again, as the engine's textures carry the GS's alpha: every partly transparent texel drew at twice
   its strength (the fonts' faint cell outlines, alpha 9 of 128, boxed every glyph and space; the main menu's light
@@ -551,9 +552,7 @@ the stream fix; not compared with the console yet).
 
 ## Next steps
 
-1. The main menu's black wedge against the console.
-2. Timing: input and sound against the beat, compared with the console.
-3. Native draws: the renderer answered at its own functions instead of through VIF1 / VU1 / GIF.
-4. Upstream to BozoEngine: the IRX translator fix and the mixer's output IRQ are merged; still a native `sceIoctl`
+1. Timing: input and sound against the beat, compared with the console.
+2. Upstream to BozoEngine: the IRX translator fix and the mixer's output IRQ are merged; still a native `sceIoctl`
    status poll and `sceSifInitCmd`, the libmpeg defaults (TMB's reference layout, the heap after `.bss`) that break
    other games, and a stream ring filled by banks (`sceCdStRead`).
