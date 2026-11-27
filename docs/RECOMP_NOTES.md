@@ -546,9 +546,9 @@ their presses after the intro 3,770 frames earlier. States keep their own frame 
 
 The game boots through the logos and the intro movie (with its music) to the title screen, the menus, the FreQmaker,
 the arena and song selection, and **a whole song, scored, to the results screen**, at 60 frames a second with the VU1
-programs compiled. Seen so far: the title screen
-is silent after the intro, and the intro's last 27 seconds or so are black while its music plays on (both as before
-the stream fix; not compared with the console yet).
+programs compiled. The intro movie plays to its last picture (the Amplitude logo) at two fields a picture with its
+sound in step, and the title's music follows (the earlier silent title and the intro's black last 27 seconds are
+gone).
 
 ## Next steps
 
