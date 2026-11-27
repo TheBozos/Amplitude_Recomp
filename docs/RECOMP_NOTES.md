@@ -293,6 +293,19 @@ data to them over SIF.
   in a paced hidden window). BozoEngine (branch `amp/sound-squeeze`) now resamples a small surplus (up to 5 % of a
   frame) into what is allowed, and cross-fades the cut of a large one (a real leap). The window's output then has as
   many clicks as the game's own mix (446 against 444 in 80 s of the tutorial, the voice's and the music's own).
+- **The game's own mix crackled too** (the tutorial's narration, the song select's previews; the narration also
+  sounded slowed down). Both are softFX's software mix, which it writes into core 0's sound data input (bytes
+  0x4000-0x47FF, read at the output's position: `Mixer::setMemoryInput`) half by half: the IRQ at the output
+  write-back's position 248 (and 504) says the half 0 (1) is nearly played, its handler mixes the next 256 samples and
+  transfers that half. The engine answered the IRQ only after the mix of the whole frame, so a refill landed anywhere in
+  the half being played: its start played the half's samples of 512 before (a click, a stretch heard twice). With the
+  mix stopped at the IRQ, the handler ran at once (the IOP's work takes no time here) and the transfer landed 2 samples
+  before the half had played: its last two samples were the next half's, a click at nearly every half (1,519 in 65 s).
+  On the console the handler's software mix of 256 samples takes far longer than the IRQ's 8 samples of lead.
+  BozoEngine (branch `amp/output-irq-stop`): the native IRX host's mix stops where the output reaches an enabled IRQ
+  address, and the SPU2 interrupt's handler runs 32 samples after it (`Libsd::kIrqResponse`). Counted in a headless
+  recording of the tutorial (sharp second-difference spikes, 85-150 s): 265 clicks before, 7 after, the levels the
+  same; the song select's previews: about 100 a second before, a few in 17 s after.
 
 ## Gameplay
 
