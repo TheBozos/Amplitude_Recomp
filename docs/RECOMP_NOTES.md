@@ -573,10 +573,16 @@ own rows into PC pages, which the game draws itself with its font, highlight and
 
 | Page | Rows |
 |---|---|
-| main | VIDEO, CHEATS, SAVE STATES, QUIT GAME; the pause menu adds BACK and a blank row |
-| VIDEO | WIDESCREEN, SHARPER EFFECTS, AUDIO OFFSET, BACK |
+| main | VIDEO, SOUND, CHEATS, SAVE STATES, QUIT GAME, BACK |
+| VIDEO | DISPLAY, RESOLUTION, RENDER SCALE, FRAME RATE, ANTIALIASING, TEXTURE SMOOTHING, TEXTURE UPSCALING, UPSCALING FILTER, WIDESCREEN, SHARPER EFFECTS, BACKGROUND PAUSE, APPLY AND SAVE, BACK |
+| SOUND | AUDIO OFFSET, BACK |
 | CHEATS | AUTOPILOT, INFINITE ENERGY, UNLOCK ALL, BACK |
 | SAVE STATES | SLOT, SAVE STATE, LOAD STATE, BACK |
+
+VIDEO's window settings are BozoEngine's `bozo::app::video` (the F2 Video tab's), edited on a copy and applied and
+written to `video.ini` by APPLY AND SAVE (`video::post`, taken at the window's next frame). The label reads
+`APPLY AND SAVE *` while the copy differs from what is applied. Widescreen and sharper effects are the port's own and
+apply at once. The window build reaches them through hooks (`amp_options`); a headless run shows only the port's own.
 
 The first version opened the window's F2 settings instead; the pages are what the other ports (TMB, Onimusha) have.
 
@@ -600,6 +606,11 @@ directory: version 10, the objects' (type, name), then each object's data ending
 - The clones added to the background's children and the view's draw lists.
 - The panel, its glow and its background a row taller (their vertices below the middle moved down).
 - The Options panel's help line, `o_main_pc_settings_HELP`.
+
+**The window's video settings.** The port never set `WindowOptions::videoSettings` or called
+`video::loadAtStartup`, so neither the F2 Video tab nor anything else applied a video setting, and `video.ini` was never
+read. Both are set now, as Onimusha does. A hidden window (a scripted run) reads and writes `build/amp_test_video.ini`
+instead of the player's file (`PS2X_VIDEO_CONFIG`; not the system's temp folder, which is on C:).
 
 **The archive overlay** (`runtime/amp_ark_overlay.cpp`). The game reads `GEN/MAIN.ARK` with `sceCdRead`, 32 sectors at
 a time in the file's order, and finds each file by its table of contents' offset and size. Pointing an entry at
@@ -642,6 +653,14 @@ call hook that matched the names' addresses in a0-a3 and in what they point to).
   Circle, Start, Select and Square are written back as released in `scePadRead`'s data while a page is up. A button
   the pages took stays hidden until it is released: the game reads the pad more than once a frame, and a Triangle that
   left the pages also left the Options menu before this.
+- *Scrolling.* A page longer than the panel's rows (4 in Options, 6 in the pause menu) scrolls. Down on the last row
+  shows the next item instead of the game's cursor wrapping, and Up on the first shows the one before. The cursor
+  stops at the list's ends. Entering the pages, or opening one, brings the cursor up to the first item with presses
+  of Up the port gives the game (a frame pressed, a frame released).
+- *Pressures.* The pad is in pressure mode (`0x79`): the game's cursor goes by the buttons' pressures too (from +8:
+  Right, Left, Up, Down, Triangle, Circle, Cross, Square). A hidden Down whose pressure was left still moved the cursor,
+  so hidden buttons' pressures are zeroed. While a page is up the left stick is Up / Down for the pages, and is centred
+  for the game.
 - *Help line.* The Options panel's help line is the Text the game gives `o_main_pc_settings_HELP`. While a page is up,
   the game's own help for a row (set by `0x242d38` as its cursor moves, wrapped) becomes the page row's help. That
   string goes at `0x108000`, recompiled code never read as data.

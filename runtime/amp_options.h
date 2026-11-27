@@ -8,6 +8,8 @@
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace amp::options
 {
@@ -66,6 +68,34 @@ namespace amp::options
     // Widescreen changed from the game's PC pages: kept, saved and the window's picture shape set (its hook).
     void setWidescreenHook(std::function<void(bool)> hook);
     void applyWidescreen(bool on);
+
+    // The window's video settings (BozoEngine's bozo::app::video, the Video tab's), for the game's PC pages: what is
+    // applied with what to choose from, and new settings applied at the window's next frame (saved to video.ini when
+    // asked). The window build sets the hooks; a headless run has none (videoAvailable false).
+    struct Video
+    {
+        int mode = 0; // 0 windowed, 1 fullscreen, 2 borderless
+        int width = 0, height = 0;
+        float renderScale = 1.0f;
+        int frameRate = 0; // 0 the game's 60, -1 the monitor's, n that many
+        int antiAliasing = 0;
+        int textureSmoothing = 0; // 0 off, 1 trilinear, 2..16 anisotropic
+        int upscale = 1;          // 1 off, 2, 4
+        bool smoothUpscale = false;
+        bool pauseInBackground = false;
+        bool operator==(const Video &) const = default;
+    };
+    struct VideoChoices
+    {
+        Video applied;
+        std::vector<std::pair<int, int>> resolutions;
+        int monitorRefresh = 0;
+        bool open = false;
+    };
+    void setVideoHooks(std::function<VideoChoices()> get, std::function<void(const Video &, bool)> post);
+    bool videoAvailable();
+    VideoChoices videoChoices();
+    void postVideo(const Video &video, bool save);
 
     // The window's tab (runtime/app/amp_settings_ui.cpp, the window build only).
     void registerSettingsTab();

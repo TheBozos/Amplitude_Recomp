@@ -149,10 +149,19 @@ runner prints where the game stops and what is not native yet. Play-test switche
 [docs/RECOMP_NOTES.md](docs/RECOMP_NOTES.md#gameplay).
 
 The game's own Options menu and pause menu have a **PC SETTINGS** entry, and behind it pages the game itself draws in
-its menus, with its font and cursor: VIDEO (widescreen, sharper effects, the audio offset), CHEATS (autopilot,
-infinite energy, unlock all), SAVE STATES (the slot, save, load) and QUIT GAME (press X twice). Up / Down choose,
-Cross acts, Left / Right change a value, Triangle or Circle go back. The port builds the entry at startup from your
-disc (the menus' files edited in memory; `AMP_NO_PC_MENU=1` keeps the game's own). The controls are rebound in F2.
+its menus, with its font and cursor:
+
+- **VIDEO**: display (windowed, fullscreen, borderless), resolution, render scale, frame rate, antialiasing, texture
+  smoothing, texture upscaling and its filter, widescreen, sharper effects, background pause, then APPLY AND SAVE (the
+  window's settings, kept in `video.ini`; widescreen and sharper effects at once).
+- **SOUND**: the audio offset.
+- **CHEATS**: autopilot, infinite energy, unlock all.
+- **SAVE STATES**: the slot, save, load.
+- **QUIT GAME**: press X twice.
+
+Up / Down choose (a long page scrolls), Cross acts, Left / Right change a value, Triangle or Circle go back. The port
+builds the entry at startup from your disc (the menus' files edited in memory; `AMP_NO_PC_MENU=1` keeps the game's
+own). The controls are rebound in F2.
 
 In the window, F2 (or a gamepad's middle button) opens the settings: Controls, Video (window mode, resolution, render
 scale), Save states, and an Amplitude tab with widescreen (16:9: the 3D through a wider camera, the HUD and menus kept

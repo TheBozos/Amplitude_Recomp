@@ -24,6 +24,7 @@
 #include "bozo/app/audio_device.h"
 #include "bozo/app/device_pad.h"
 #include "bozo/app/panel.h"
+#include "bozo/app/video_settings.h"
 #include "bozo/app/window.h"
 #endif
 
@@ -327,6 +328,23 @@ int main(int argc, char **argv)
 #ifdef AMP_WITH_WINDOW
     if (window)
     {
+        // The player's video settings (video.ini in the user folder: the F2 Video tab's and the PC SETTINGS pages'
+        // window size and mode, render scale, anti-aliasing, frame rate, texture smoothing and upscaling) over the
+        // defaults, the environment over the file. Without this neither applied anything. A hidden window (a scripted
+        // run, captures) reads and writes no player's file: a test's own one in build/ (D:, not the system's temp).
+        if (windowOptions.hidden && !std::getenv("PS2X_VIDEO_CONFIG"))
+        {
+            const std::string none = (std::filesystem::current_path() / "build" / "amp_test_video.ini").string();
+#ifdef _WIN32
+            _putenv_s("PS2X_VIDEO_CONFIG", none.c_str());
+#else
+            setenv("PS2X_VIDEO_CONFIG", none.c_str(), 1);
+#endif
+        }
+        bozo::app::video::loadAtStartup(windowOptions.width, windowOptions.height);
+        if (windowOptions.fullscreen)
+            bozo::app::video::edited().mode = bozo::app::video::WindowMode::Borderless;
+        windowOptions.videoSettings = true;
         bozo::app::Game game;
         game.run = run;
         game.stop = [&] { host.requestStop(); };
@@ -336,6 +354,36 @@ int main(int argc, char **argv)
         amp::options::setWidescreenHook([](bool on) { bozo::app::setPictureAspect(on ? 16.0f / 9.0f : 0.0f); });
         amp::options::setStateSlots([] { return bozo::app::stateSlot(); }, [](int slot) { bozo::app::setStateSlot(slot); },
                                     [](int slot) { return bozo::app::stateSlotSummary(slot); });
+        // The window's video settings for the pages' VIDEO (BozoEngine's bozo::app::video, any thread).
+        amp::options::setVideoHooks(
+            []
+            {
+                const bozo::app::video::Shared s = bozo::app::video::shared();
+                amp::options::VideoChoices c;
+                const bozo::app::video::Settings &v = s.applied;
+                c.applied = {static_cast<int>(v.mode), v.width, v.height, v.renderScale, v.frameRate, v.antiAliasing,
+                             v.textureSmoothing, static_cast<int>(v.textureUpscale.factor),
+                             v.textureUpscale.filter == bozo::render::UpscaleFilter::Smooth, v.pauseInBackground};
+                c.resolutions = s.resolutions;
+                c.monitorRefresh = s.monitorRefresh;
+                c.open = s.open;
+                return c;
+            },
+            [](const amp::options::Video &v, bool save)
+            {
+                bozo::app::video::Settings s = bozo::app::video::shared().applied;
+                s.mode = static_cast<bozo::app::video::WindowMode>(v.mode);
+                s.width = v.width;
+                s.height = v.height;
+                s.renderScale = v.renderScale;
+                s.frameRate = v.frameRate;
+                s.antiAliasing = v.antiAliasing;
+                s.textureSmoothing = v.textureSmoothing;
+                s.textureUpscale.factor = static_cast<uint8_t>(v.upscale);
+                s.textureUpscale.filter = v.smoothUpscale ? bozo::render::UpscaleFilter::Smooth : bozo::render::UpscaleFilter::Edge;
+                s.pauseInBackground = v.pauseInBackground;
+                bozo::app::video::post(s, save);
+            });
         bozo::app::setPictureAspect(amp::options::widescreen() ? 16.0f / 9.0f : 0.0f);
         game.framesEnded = [&] { return host.framesEnded(); };
         game.saveState = [&](int slot) { host.requestSave(bozo::app::stateSlotPath(slot)); };

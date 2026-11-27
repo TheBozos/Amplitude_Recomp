@@ -241,6 +241,46 @@ namespace amp::options
         return g_summary ? g_summary(slot) : std::string();
     }
 
+    namespace
+    {
+        std::function<VideoChoices()> g_videoGet;
+        std::function<void(const Video &, bool)> g_videoPost;
+    }
+
+    void setVideoHooks(std::function<VideoChoices()> get, std::function<void(const Video &, bool)> post)
+    {
+        std::lock_guard lock(g_stateMutex);
+        g_videoGet = std::move(get);
+        g_videoPost = std::move(post);
+    }
+
+    bool videoAvailable()
+    {
+        std::lock_guard lock(g_stateMutex);
+        return g_videoGet && g_videoPost;
+    }
+
+    VideoChoices videoChoices()
+    {
+        std::function<VideoChoices()> f;
+        {
+            std::lock_guard lock(g_stateMutex);
+            f = g_videoGet;
+        }
+        return f ? f() : VideoChoices{};
+    }
+
+    void postVideo(const Video &video, bool save)
+    {
+        std::function<void(const Video &, bool)> f;
+        {
+            std::lock_guard lock(g_stateMutex);
+            f = g_videoPost;
+        }
+        if (f)
+            f(video, save);
+    }
+
     void setWidescreenHook(std::function<void(bool)> hook)
     {
         std::lock_guard lock(g_stateMutex);

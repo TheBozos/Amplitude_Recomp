@@ -4,14 +4,21 @@
 // The entry is the game's own (runtime/amp_menu_files.cpp: a button added to the two panels' definitions and scenes,
 // read through the archive overlay). Selected, it turns the panel's own rows into the PC pages, their labels set with
 // the game's own text function, so the game draws them with its font, its highlight and its cursor:
-//   main          VIDEO, CHEATS, SAVE STATES, QUIT GAME (the pause menu's two more rows: BACK, blank)
-//   VIDEO         WIDESCREEN, SHARPER EFFECTS, AUDIO OFFSET, BACK
+//   main          VIDEO, SOUND, CHEATS, SAVE STATES, QUIT GAME, BACK
+//   VIDEO         DISPLAY, RESOLUTION, RENDER SCALE, FRAME RATE, ANTIALIASING, TEXTURE SMOOTHING, TEXTURE UPSCALING,
+//                 UPSCALING FILTER (the window's settings, applied and saved by APPLY AND SAVE), WIDESCREEN, SHARPER
+//                 EFFECTS (the port's own, at once), BACKGROUND PAUSE, APPLY AND SAVE, BACK
+//   SOUND         AUDIO OFFSET, BACK
 //   CHEATS        AUTOPILOT, INFINITE ENERGY, UNLOCK ALL, BACK
 //   SAVE STATES   SLOT, SAVE STATE, LOAD STATE, BACK
-// Up and Down are the game's (its navigator moves the cursor over the rows). Cross acts on the row (opens a page,
-// switches a value, saves, loads; QUIT GAME asks for a second Cross), Left and Right change a value, Triangle and
-// Circle go back a page and, from the main page, put the panel's own labels back. While a page is up those buttons
-// (and Start, Select, Square) are taken out of the game's pad data, so the game does nothing with them.
+// A page longer than the panel's rows (4 in Options, 6 in the pause menu) scrolls: Down on the last row shows the next
+// item instead of the game's cursor wrapping, Up on the first the one before; the cursor stops at the list's ends.
+// Up and Down are otherwise the game's (its navigator moves the cursor). Cross acts on the item (opens a page, switches
+// a value, saves, loads; QUIT GAME asks for a second Cross), Left and Right change a value, Triangle and Circle go back
+// a page and, from the main page, put the panel's own labels back. While a page is up those buttons (and Start,
+// Select, Square, and Up / Down when they scroll) are taken out of the game's pad data, so the game does nothing with
+// them. A page shorter than the panel brings the cursor up onto its last item with presses of Up the port gives the
+// game.
 //
 // What the game keeps, from its code and memory:
 // - A panel (the freq_panel class, vtable 0x3cfc28) is drawn by 0x19e0d0 once a frame while shown. It keeps its
@@ -30,10 +37,11 @@
 #include "bozo/port.h"
 
 #include <algorithm>
-#include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -47,6 +55,9 @@ namespace amp
         constexpr uint32_t kSelect = 0x0001u, kStart = 0x0008u, kUp = 0x0010u, kRight = 0x0020u, kDown = 0x0040u,
                            kLeft = 0x0080u, kTriangle = 0x1000u, kCircle = 0x2000u, kCross = 0x4000u, kSquare = 0x8000u;
         constexpr uint32_t kTaken = kSelect | kStart | kRight | kLeft | kTriangle | kCircle | kCross | kSquare;
+        constexpr const char *kEntryHelp = "Video, cheats, save states and quit";
+        // A string of the port's own for the game: 0x108000-0x108FFF, recompiled code never read as data.
+        constexpr uint32_t kStrings = 0x108000u;
 
         uint32_t word(const uint8_t *ram, uint32_t a)
         {
@@ -96,24 +107,39 @@ namespace amp
             }
         };
 
+        // ---- The pages ---------------------------------------------------------------------------------------------
+
         enum class Page
         {
             Off,
             Main,
             Video,
+            Sound,
             Cheats,
             States,
+        };
+
+        struct Item
+        {
+            std::function<std::string()> label;
+            std::function<void(int)> act; // 0: Cross; -1 / +1: Left / Right
+            std::string help;
         };
 
         struct Pages
         {
             Page page = Page::Off;
             uint32_t panel = 0;
-            std::vector<uint32_t> components; // the panel's rows, in its navigator's order
+            std::vector<uint32_t> components;   // the panel's rows, in its navigator's order
             std::vector<std::string> originals; // their labels, put back on leaving
+            size_t offset = 0;                  // the page's first item shown
             bool quitAsked = false;
-            bool restoreForSave = false; // the labels put back a frame for a state's save, the page shown again after
+            bool savePending = false;    // SAVE STATE chosen: the panel's own labels up, then the save asked for
+            uint64_t restoreAt = 0;      // until this vblank the panel's own labels stay up (the save taken meanwhile)
             uint64_t panelDrawn = 0;
+            options::Video video;        // VIDEO's edits of the window's settings, applied by APPLY AND SAVE
+            int ups = 0;                 // Up presses still to give the game (a short page's cursor brought up)
+            uint64_t upAt = 0;           // the vblank of the last one given (one press, one release, a frame each)
         } g_pages;
 
         uint64_t g_focusedAt = ~0ull; // the vblank a panel last drew with PC SETTINGS focused
@@ -121,11 +147,190 @@ namespace amp
         std::map<uint32_t, uint32_t> g_held;  // per pad (port << 8 | slot): the buttons down at its last read
         std::map<uint32_t, uint32_t> g_taken; // per pad: buttons the pages took, hidden from the game until released
         uint32_t g_helpText = 0;              // the Options help panel's Text (seen as the game sets PC SETTINGS' help)
-        constexpr const char *kEntryHelp = "Video, cheats, save states and quit";
-        // A string of the port's own for the game: 0x108000-0x108FFF, recompiled code never read as data.
-        constexpr uint32_t kStrings = 0x108000u;
+        uint64_t g_now = 0;                   // this read's vblank
 
-        std::string rowHelp(Page page, size_t row);
+        std::string onOff(bool on) { return on ? "ON" : "OFF"; }
+        std::string times(int n) { return std::to_string(n) + "X"; }
+        template <typename T> T step(const std::vector<T> &list, const T &value, int delta)
+        {
+            const int n = static_cast<int>(list.size());
+            int i = 0;
+            for (int k = 0; k < n; ++k)
+                if (list[static_cast<size_t>(k)] == value)
+                    i = k;
+            return list[static_cast<size_t>(((i + (delta ? delta : 1)) % n + n) % n)];
+        }
+
+        void open(Page page);
+
+        std::vector<Item> items(Page page)
+        {
+            Pages &p = g_pages;
+            const Item back{[] { return std::string("BACK"); }, [](int d) { if (!d) open(Page::Main); }, "Back to PC settings"};
+            std::vector<Item> l;
+            switch (page)
+            {
+            case Page::Main:
+                l = {{[] { return std::string("VIDEO"); }, [](int d) { if (!d) open(Page::Video); },
+                      "Display, quality, widescreen"},
+                     {[] { return std::string("SOUND"); }, [](int d) { if (!d) open(Page::Sound); }, "The audio offset"},
+                     {[] { return std::string("CHEATS"); }, [](int d) { if (!d) open(Page::Cheats); },
+                      "Autopilot, energy, unlocks"},
+                     {[] { return std::string("SAVE STATES"); }, [](int d) { if (!d) open(Page::States); },
+                      "Save or load at any point"},
+                     {[&p] { return std::string(p.quitAsked ? "X AGAIN TO QUIT" : "QUIT GAME"); },
+                      [&p](int d) {
+                          if (d)
+                              return;
+                          if (p.quitAsked)
+                          {
+                              std::printf("[amp:menu] QUIT GAME\n");
+                              options::quit();
+                          }
+                          p.quitAsked = true;
+                      },
+                      "Close the game: press X twice"},
+                     {[] { return std::string("BACK"); }, [](int d) { if (!d) open(Page::Off); }, "Back to the menu"}};
+                break;
+            case Page::Video:
+            {
+                const options::VideoChoices c = options::videoChoices();
+                options::Video &v = p.video;
+                if (options::videoAvailable())
+                {
+                    const std::vector<int> modes = {0, 1, 2};
+                    const std::vector<float> scales = {0.5f, 0.75f, 1.0f, 1.5f, 2.0f};
+                    const std::vector<int> aa = {0, 2, 4, 8}, smoothing = {0, 1, 2, 4, 8, 16}, upscales = {1, 2, 4};
+                    std::vector<int> rates = {0, -1};
+                    if (v.frameRate > 0)
+                        rates.push_back(v.frameRate);
+                    const auto resolutions = c.resolutions;
+                    const int refresh = c.monitorRefresh;
+                    l.push_back({[&v] { return std::string("DISPLAY: ") + (v.mode == 1 ? "FULLSCREEN" : v.mode == 2 ? "BORDERLESS" : "WINDOWED"); },
+                                 [&v, modes](int d) { v.mode = step(modes, v.mode, d); }, "Window, fullscreen, borderless"});
+                    l.push_back({[&v] {
+                                     return "RESOLUTION: " + (v.width > 0 && v.height > 0 ? std::to_string(v.width) + " X " + std::to_string(v.height)
+                                                                                           : std::string("DEFAULT"));
+                                 },
+                                 [&v, resolutions](int d) {
+                                     if (resolutions.empty())
+                                         return;
+                                     const auto next = step(resolutions, std::make_pair(v.width, v.height), d);
+                                     v.width = next.first;
+                                     v.height = next.second;
+                                 },
+                                 "The window's size"});
+                    l.push_back({[&v] { return "RENDER SCALE: " + std::to_string(static_cast<int>(std::lround(v.renderScale * 100.0f))) + "%"; },
+                                 [&v, scales](int d) {
+                                     float best = scales[2];
+                                     for (float s : scales)
+                                         if (std::fabs(s - v.renderScale) < 0.01f)
+                                             best = s;
+                                     v.renderScale = step(scales, best, d);
+                                 },
+                                 "How sharp the 3D is drawn"});
+                    l.push_back({[&v, refresh] {
+                                     return std::string("FRAME RATE: ") +
+                                            (v.frameRate == 0 ? std::string("60 (GAME)")
+                                             : v.frameRate < 0 ? (refresh > 0 ? "MONITOR (" + std::to_string(refresh) + ")" : std::string("MONITOR"))
+                                                               : std::to_string(v.frameRate));
+                                 },
+                                 [&v, rates](int d) { v.frameRate = step(rates, v.frameRate, d); },
+                                 "60, or the monitor's rate"});
+                    l.push_back({[&v] { return "ANTIALIASING: " + (v.antiAliasing ? times(v.antiAliasing) : std::string("OFF")); },
+                                 [&v, aa](int d) { v.antiAliasing = step(aa, v.antiAliasing, d); }, "Smoother edges (MSAA)"});
+                    l.push_back({[&v] {
+                                     return "TEXTURE SMOOTHING: " + (v.textureSmoothing == 0   ? std::string("OFF")
+                                                                     : v.textureSmoothing == 1 ? std::string("TRILINEAR")
+                                                                                               : times(v.textureSmoothing));
+                                 },
+                                 [&v, smoothing](int d) { v.textureSmoothing = step(smoothing, v.textureSmoothing, d); },
+                                 "Off is the console's own look"});
+                    l.push_back({[&v] { return "TEXTURE UPSCALING: " + (v.upscale > 1 ? times(v.upscale) : std::string("OFF")); },
+                                 [&v, upscales](int d) { v.upscale = step(upscales, v.upscale, d); },
+                                 "Textures from larger copies"});
+                    l.push_back({[&v] { return std::string("UPSCALING FILTER: ") + (v.smoothUpscale ? "SMOOTH" : "EDGE"); },
+                                 [&v](int) { v.smoothUpscale = !v.smoothUpscale; }, "How the larger copies are made"});
+                }
+                l.push_back({[] { return "WIDESCREEN: " + onOff(options::widescreen()); },
+                             [](int) { options::applyWidescreen(!options::widescreen()); },
+                             "16:9 3D, the menus 4:3"});
+                l.push_back({[] { return "SHARPER EFFECTS: " + onOff(options::imageScale() > 1); },
+                             [](int) {
+                                 options::setImageScale(options::imageScale() > 1 ? 1 : 2);
+                                 options::save();
+                             },
+                             "Effects at twice their size"});
+                if (options::videoAvailable())
+                {
+                    l.push_back({[&v] { return "BACKGROUND PAUSE: " + onOff(v.pauseInBackground); },
+                                 [&v](int) { v.pauseInBackground = !v.pauseInBackground; },
+                                 "Pause when not in focus"});
+                    l.push_back({[&v] {
+                                     return std::string(v == options::videoChoices().applied ? "APPLY AND SAVE" : "APPLY AND SAVE *");
+                                 },
+                                 [&v](int d) {
+                                     if (d)
+                                         return;
+                                     std::printf("[amp:menu] VIDEO: applied and saved\n");
+                                     options::postVideo(v, true);
+                                 },
+                                 "Apply and keep these settings"});
+                }
+                l.push_back(back);
+                break;
+            }
+            case Page::Sound:
+                l = {{[] { return "AUDIO OFFSET: " + std::to_string(options::audioOffsetMs()) + " MS"; },
+                      [](int d) {
+                          options::setAudioOffsetMs(std::clamp(options::audioOffsetMs() + (d ? d : 1) * 10, 0, 200));
+                          options::save();
+                      },
+                      "Left / Right: the sound's delay"},
+                     back};
+                break;
+            case Page::Cheats:
+            {
+                const auto cheat = [](options::Cheat c, const char *name, const char *help) {
+                    return Item{[c, name] { return std::string(name) + ": " + onOff(options::cheat(c)); },
+                                [c](int) { options::setCheat(c, !options::cheat(c)); }, help};
+                };
+                l = {cheat(options::Cheat::Autopilot, "AUTOPILOT", "The game plays the gems for you"),
+                     cheat(options::Cheat::InfiniteEnergy, "INFINITE ENERGY", "The energy meter stays full"),
+                     cheat(options::Cheat::UnlockAll, "UNLOCK ALL", "Every arena and song open"), back};
+                break;
+            }
+            case Page::States:
+            {
+                const auto empty = [] {
+                    const std::string summary = options::stateSummary(options::stateSlot());
+                    return summary.empty() || summary.find("empty") != std::string::npos;
+                };
+                l = {{[empty] { return "SLOT " + std::to_string(options::stateSlot()) + (empty() ? " (EMPTY)" : " (SAVED)"); },
+                      [](int d) { options::setStateSlot(options::stateSlot() + (d ? d : 1)); }, "Left / Right: choose the slot"},
+                     {[] { return std::string("SAVE STATE"); }, [&p](int d) {
+                          if (d || !options::hasStates())
+                              return;
+                          p.savePending = true; // the panel's own labels in the state (settle, padRead)
+                      },
+                      "Save the game to this slot"},
+                     {[empty] { return std::string(empty() ? "LOAD STATE (NONE)" : "LOAD STATE"); }, [](int d) {
+                          if (d || !options::hasStates())
+                              return;
+                          options::loadState(options::stateSlot());
+                          g_pages = Pages{}; // the state's own panel from its next frame
+                      },
+                      "Load the game from this slot"},
+                     back};
+                break;
+            }
+            case Page::Off:
+                break;
+            }
+            return l;
+        }
+
+        // ---- The panel ---------------------------------------------------------------------------------------------
 
         // The rows of the two panels, as their navigators order them (meta.ui, and the PC SETTINGS row added).
         const std::vector<std::string> *rowsOf(const std::string &panel)
@@ -148,44 +353,6 @@ namespace amp
             collect(ram, word(ram, node + 0xcu), header, out, depth + 1);
         }
 
-        std::string onOff(bool on) { return on ? "ON" : "OFF"; }
-
-        std::vector<std::string> labels(Page page, size_t rows)
-        {
-            std::vector<std::string> l;
-            switch (page)
-            {
-            case Page::Main:
-                l = {"VIDEO", "CHEATS", "SAVE STATES", g_pages.quitAsked ? "CROSS AGAIN TO QUIT" : "QUIT GAME"};
-                break;
-            case Page::Video:
-                l = {"WIDESCREEN: " + onOff(options::widescreen()), "SHARPER EFFECTS: " + onOff(options::imageScale() > 1),
-                     "AUDIO OFFSET: " + std::to_string(options::audioOffsetMs()) + " MS", "BACK"};
-                break;
-            case Page::Cheats:
-                l = {"AUTOPILOT: " + onOff(options::cheat(options::Cheat::Autopilot)),
-                     "INFINITE ENERGY: " + onOff(options::cheat(options::Cheat::InfiniteEnergy)),
-                     "UNLOCK ALL: " + onOff(options::cheat(options::Cheat::UnlockAll)), "BACK"};
-                break;
-            case Page::States:
-            {
-                const int slot = options::stateSlot();
-                std::string summary = options::stateSummary(slot);
-                const bool empty = summary.empty() || summary.find("empty") != std::string::npos;
-                l = {"SLOT " + std::to_string(slot) + (empty ? " (EMPTY)" : " (SAVED)"), "SAVE STATE",
-                     empty ? "LOAD STATE (NONE)" : "LOAD STATE", "BACK"};
-                break;
-            }
-            case Page::Off:
-                break;
-            }
-            // The pause menu's two more rows: BACK on the main page, blank otherwise.
-            while (l.size() < rows)
-                l.push_back(page == Page::Main && l.size() == 4 ? "BACK" : "");
-            l.resize(rows);
-            return l;
-        }
-
         size_t focusedRow(const uint8_t *ram)
         {
             const uint32_t focus = word(ram, g_pages.panel + kFocus);
@@ -193,40 +360,45 @@ namespace amp
             return it == g_pages.components.end() ? 0 : static_cast<size_t>(it - g_pages.components.begin());
         }
 
+        bool hasHelp() { return inRam(g_helpText) && g_pages.components.size() == 4; } // the Options panel's help line
+
+        std::string currentHelp(const uint8_t *ram)
+        {
+            if (g_pages.page == Page::Off)
+                return kEntryHelp;
+            const std::vector<Item> l = items(g_pages.page);
+            const size_t i = g_pages.offset + focusedRow(ram);
+            return i < l.size() ? l[i].help : std::string();
+        }
+
         void show(Call &call, const uint8_t *ram)
         {
-            const std::vector<std::string> l = g_pages.page == Page::Off ? g_pages.originals
-                                                                          : labels(g_pages.page, g_pages.components.size());
-            for (size_t i = 0; i < g_pages.components.size(); ++i)
+            const Pages &p = g_pages;
+            std::vector<std::string> labels = p.originals;
+            if (p.page != Page::Off)
             {
-                const uint32_t t = word(ram, g_pages.components[i] + kText);
-                if (inRam(t) && text(ram, word(ram, t + kLabel)) != l[i])
-                    call.setText(t, l[i]);
+                const std::vector<Item> l = items(p.page);
+                for (size_t i = 0; i < labels.size(); ++i)
+                    labels[i] = p.offset + i < l.size() ? l[p.offset + i].label() : std::string();
             }
-            // The Options panel's help line: the row's own (the entry's again once the pages are left).
-            if (inRam(g_helpText) && rowsOf("o_main") && g_pages.components.size() == 4)
+            for (size_t i = 0; i < p.components.size(); ++i)
             {
-                const std::string h = g_pages.page == Page::Off ? std::string(kEntryHelp) : rowHelp(g_pages.page, focusedRow(ram));
+                const uint32_t t = word(ram, p.components[i] + kText);
+                if (inRam(t) && text(ram, word(ram, t + kLabel)) != labels[i])
+                    call.setText(t, labels[i]);
+            }
+            if (hasHelp())
+            {
+                const std::string h = currentHelp(ram);
                 if (text(ram, word(ram, g_helpText + kLabel)) != h)
                     call.setText(g_helpText, h);
             }
         }
 
-        std::string rowHelp(Page page, size_t row)
-        {
-            static const char *const help[][4] = {
-                {"Widescreen, sharper effects, audio offset", "Autopilot, infinite energy, unlock all",
-                 "Save or load the game at any point", "Close the game: press X twice"},
-                {"16:9: the 3D wider, the menus stay 4:3", "Effects drawn at twice their size",
-                 "Left / Right: how late the sound reaches you", "Back to PC settings"},
-                {"The game plays the gems for you", "The energy meter stays full", "Every arena and song open",
-                 "Back to PC settings"},
-                {"Left / Right: choose the slot", "Save the game to this slot", "Load the game from this slot",
-                 "Back to PC settings"},
-            };
-            const int page_ = page == Page::Main ? 0 : page == Page::Video ? 1 : page == Page::Cheats ? 2 : 3;
-            return row < 4 ? help[page_][row] : std::string("Back to the menu");
-        }
+        // A page opened (Off: the panel's own labels back): its first item at the top, the cursor on its row, or brought
+        // up onto the page's last item when the page is shorter.
+        Page g_opened = Page::Off;
+        void open(Page page) { g_opened = page == Page::Off ? Page::Main : page, g_pages.page = page == Page::Off ? Page::Off : page; }
 
         bool enter(Call &call, const uint8_t *ram, uint32_t panel)
         {
@@ -249,101 +421,51 @@ namespace amp
             }
             p.panelDrawn = g_pages.panelDrawn;
             g_pages = std::move(p);
+            // The cursor is on PC SETTINGS, the last row: brought up to the first item.
+            g_pages.ups = static_cast<int>(focusedRow(ram));
             show(call, ram);
             return true;
         }
 
-        void leave(Call &call, const uint8_t *ram)
+        // After an item's action: a page opened (or left) shown from its first item; the cursor kept on a real item.
+        void settle(Call &call, const uint8_t *ram)
         {
-            g_pages.page = Page::Off;
-            show(call, ram);
-            g_pages = Pages{};
-        }
-
-        // Cross, Left or Right (-1, +1) on row `row` of the page.
-        void act(Call &call, const uint8_t *ram, size_t row, int step)
-        {
-            const bool cross = step == 0;
             Pages &p = g_pages;
-            const bool back = row == 3 && p.page != Page::Main;
-            if (row != 3 || p.page != Page::Main)
-                p.quitAsked = false;
-            switch (p.page)
+            if (p.savePending)
             {
-            case Page::Main:
-                if (!cross)
-                    return;
-                if (row == 0)
-                    p.page = Page::Video;
-                else if (row == 1)
-                    p.page = Page::Cheats;
-                else if (row == 2)
-                    p.page = Page::States;
-                else if (row == 3)
-                {
-                    if (p.quitAsked)
-                    {
-                        std::printf("[amp:menu] QUIT GAME\n");
-                        options::quit();
-                    }
-                    p.quitAsked = true;
-                }
-                else if (row == 4)
-                {
-                    leave(call, ram);
-                    return;
-                }
-                break;
-            case Page::Video:
-                if (row == 0)
-                    options::applyWidescreen(!options::widescreen());
-                else if (row == 1)
-                {
-                    options::setImageScale(options::imageScale() > 1 ? 1 : 2);
-                    options::save();
-                }
-                else if (row == 2 && !cross)
-                {
-                    options::setAudioOffsetMs(std::clamp(options::audioOffsetMs() + step * 10, 0, 200));
-                    options::save();
-                }
-                break;
-            case Page::Cheats:
-                if (row <= 2)
-                {
-                    const options::Cheat c = row == 0 ? options::Cheat::Autopilot
-                                                      : row == 1 ? options::Cheat::InfiniteEnergy : options::Cheat::UnlockAll;
-                    options::setCheat(c, !options::cheat(c));
-                }
-                break;
-            case Page::States:
-                if (row == 0)
-                    options::setStateSlot(options::stateSlot() + (cross ? 1 : step));
-                else if (row == 1 && cross && options::hasStates())
-                {
-                    // The panel's own labels in the state, the page shown again after the save.
-                    p.restoreForSave = true;
-                    const Page page = p.page;
-                    p.page = Page::Off;
-                    show(call, ram);
-                    p.page = page;
-                    options::saveState(options::stateSlot());
-                    return;
-                }
-                else if (row == 2 && cross && options::hasStates())
-                {
-                    options::loadState(options::stateSlot());
-                    g_pages = Pages{}; // the state's own panel from its next frame
-                    return;
-                }
-                break;
-            case Page::Off:
+                // The panel's own labels up until the save is taken (at a frame's end), then the page again (padRead).
+                p.savePending = false;
+                const Page page = p.page;
+                p.page = Page::Off;
+                show(call, ram);
+                p.page = page;
+                p.restoreAt = g_now + 3;
+                options::saveState(options::stateSlot());
                 return;
             }
-            if (back && cross)
-                p.page = Page::Main;
+            if (g_opened != Page::Off || p.page == Page::Off)
+            {
+                g_opened = Page::Off;
+                p.quitAsked = false;
+                p.offset = 0;
+                if (p.page == Page::Video)
+                {
+                    const options::VideoChoices c = options::videoChoices();
+                    p.video = c.applied;
+                }
+                if (p.page == Page::Off)
+                {
+                    show(call, ram);
+                    g_pages = Pages{};
+                    return;
+                }
+                // The page from its first item, the cursor brought up to it.
+                p.ups = static_cast<int>(focusedRow(ram));
+            }
             show(call, ram);
         }
+
+        // ---- The game's functions ----------------------------------------------------------------------------------
 
         // 0x19e0d0(panel): a panel drawn. Its focus noted (AMP_TRACE_MENU=1 prints it as it changes).
         void panelDraw(uint8_t *ram, R5900Context *ctx, Runtime *rt)
@@ -390,19 +512,48 @@ namespace amp
             if (ctx->r[2].sw[0] != 1)
                 return;
             const uint32_t released = g.read8(data + 2) | (g.read8(data + 3) << 8);
-            const uint32_t down = ~released & 0xFFFFu;
+            // The pad's mode (0x41 digital, 0x73 analog: the sticks at +4..+7, 0x79 with the buttons' pressures at
+            // +8..+19, which the game's cursor goes by too). While the pages are up the left stick is Up / Down.
+            const uint8_t mode = g.read8(data + 1);
+            const bool sticks = mode == 0x73u || mode == 0x79u;
+            uint32_t stick = 0;
+            if (sticks && g_pages.page != Page::Off)
+            {
+                const uint8_t ly = g.read8(data + 7);
+                stick = ly < 0x40u ? kUp : ly > 0xC0u ? kDown : 0u;
+            }
+            const uint32_t down = (~released & 0xFFFFu) | stick;
             const uint32_t pad = (port << 8) | slot;
             uint32_t &held = g_held[pad];
             const uint32_t pressed = down & ~held;
             held = down;
             uint32_t &taken = g_taken[pad];
             taken &= down; // a button the pages took stays the pages' until it is released
-            const auto hide = [&](uint32_t buttons) {
-                const uint32_t keep = released | buttons;
+            uint32_t give = 0; // buttons the port presses for the game (a short page's cursor brought up)
+            const auto write = [&](uint32_t hidden) {
+                const uint32_t keep = (released | hidden) & ~give;
                 const uint8_t bytes[2] = {static_cast<uint8_t>(keep), static_cast<uint8_t>(keep >> 8)};
                 g.write(data + 2, bytes, 2);
+                // The hidden buttons' pressures too (the pressure bytes: Right, Left, Up, Down, Triangle, Circle, Cross,
+                // Square, from +8), and the left stick centred while the pages are up.
+                if (mode == 0x79u)
+                {
+                    static const uint32_t order[8] = {kRight, kLeft, kUp, kDown, kTriangle, kCircle, kCross, kSquare};
+                    for (uint32_t k = 0; k < 8; ++k)
+                        if (hidden & order[k] & ~give)
+                        {
+                            const uint8_t zero = 0;
+                            g.write(data + 8 + k, &zero, 1);
+                        }
+                }
+                if (sticks && g_pages.page != Page::Off)
+                {
+                    const uint8_t centre[2] = {0x80, 0x80};
+                    g.write(data + 6, centre, 2);
+                }
             };
             const uint64_t now = bozo::port::vblankCount(rt);
+            g_now = now;
             Call call(ram, &before, rt);
             Pages &p = g_pages;
 
@@ -414,7 +565,7 @@ namespace amp
                     taken |= kCross;
                 }
                 if (taken)
-                    hide(taken);
+                    write(taken);
                 return;
             }
             // The panel gone (its screen left another way): the pages forgotten.
@@ -423,52 +574,96 @@ namespace amp
                 g_pages = Pages{};
                 return;
             }
-            if (p.restoreForSave)
+            if (p.restoreAt)
             {
-                p.restoreForSave = false;
-                show(call, ram);
+                // A save under way: the panel's own labels stay up, nothing reaches the game; then the page again.
+                if (now < p.restoreAt)
+                {
+                    write(kTaken | kUp | kDown);
+                    return;
+                }
+                p.restoreAt = 0;
             }
-            const size_t row = focusedRow(ram);
+            // Up given to the game, a frame pressed and a frame released, until the cursor is on the page's items.
+            if (p.ups > 0)
+            {
+                if (now != p.upAt)
+                {
+                    const bool press = (p.upAt & 1u) == 0;
+                    p.upAt = now;
+                    if (press)
+                        give = kUp;
+                    else
+                        --p.ups;
+                }
+                write(kTaken | kUp | kDown);
+                if (p.ups == 0)
+                    show(call, ram);
+                return;
+            }
+            show(call, ram); // (a label refreshed the frame after a save, or as a value changed elsewhere)
+            const std::vector<Item> list = items(p.page);
+            const size_t rows = p.components.size(), row = focusedRow(ram), index = p.offset + row;
+            if (static const bool trace = std::getenv("AMP_TRACE_MENU") != nullptr; trace && pressed)
+                std::printf("[amp:menu] vblank %llu pad %x: pressed %04x, row %zu, offset %zu, item %zu of %zu\n",
+                            static_cast<unsigned long long>(now), pad, pressed, row, p.offset, index, list.size());
+            uint32_t hidden = kTaken;
             taken |= down & kTaken;
             if (pressed & (kTriangle | kCircle))
             {
-                if (p.page == Page::Main)
-                    leave(call, ram);
-                else
-                {
-                    p.page = Page::Main;
-                    p.quitAsked = false;
-                    show(call, ram);
-                }
+                open(p.page == Page::Main ? Page::Off : Page::Main);
+                settle(call, ram);
             }
-            else if (pressed & kCross)
-                act(call, ram, row, 0);
-            else if (pressed & kLeft)
-                act(call, ram, row, -1);
-            else if (pressed & kRight)
-                act(call, ram, row, +1);
-            else if ((pressed & (kUp | kDown)) && p.quitAsked)
+            else if ((pressed & kCross) && index < list.size())
             {
+                list[index].act(0);
+                settle(call, ram);
+            }
+            else if ((pressed & (kLeft | kRight)) && index < list.size())
+            {
+                list[index].act((pressed & kLeft) ? -1 : 1);
+                settle(call, ram);
+            }
+            else if (pressed & kDown)
+            {
+                // The list's last item: the cursor stays; the panel's last row with more below: the list scrolls.
+                if (index + 1 >= list.size())
+                    hidden |= kDown, taken |= kDown;
+                else if (row + 1 >= rows)
+                {
+                    ++p.offset;
+                    hidden |= kDown, taken |= kDown;
+                }
                 p.quitAsked = false;
                 show(call, ram);
             }
-            // The game sees none of the pages' buttons (Up and Down stay its: they move its cursor).
-            hide(kTaken);
+            else if (pressed & kUp)
+            {
+                if (row == 0)
+                {
+                    if (p.offset > 0)
+                        --p.offset;
+                    hidden |= kUp, taken |= kUp;
+                }
+                p.quitAsked = false;
+                show(call, ram);
+            }
+            // The game sees none of the pages' buttons (Up and Down stay its, unless they scrolled or stopped).
+            write(hidden | taken);
         }
 
         // 0x242d38(text, string): a Text's label set. The Options help panel's Text is the one the game gives PC
         // SETTINGS' help; while the pages are up, what the game sets there (a row's own help, as its cursor moves) is
-        // the page row's help instead.
+        // the page item's help instead.
         void setText(uint8_t *ram, R5900Context *ctx, Runtime *rt)
         {
             const uint32_t t = ctx->r[4].uw[0];
             const std::string s = text(ram, ctx->r[5].uw[0]);
             if (s == kEntryHelp)
                 g_helpText = t;
-            if (t == g_helpText && g_pages.page != Page::Off && g_pages.components.size() == 4)
+            if (t == g_helpText && g_pages.page != Page::Off && hasHelp())
             {
-                // The game's cursor has just moved: the row it is on now.
-                const std::string h = rowHelp(g_pages.page, focusedRow(ram));
+                const std::string h = currentHelp(ram);
                 std::memcpy(ram + kStrings, h.c_str(), h.size() + 1);
                 ctx->r[5].ud[0] = kStrings;
             }
