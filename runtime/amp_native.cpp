@@ -43,6 +43,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <string>
 #include <set>
 #include <vector>
 
@@ -629,11 +630,47 @@ namespace amp
             draw(p.prim, kIdentity, sprites);
             return true;
         }
-        // A drawable's visibility test (0x232b30: its bounding sphere in the camera's space against the selected camera's
-        // six frustum planes at +0x2c0, 0x290f90, the camera at *0x3b0988; then a size cut). Widescreen: the planes
-        // widened for the call as the clip space's x is (x scaled by 3/4 in each plane's normal, renormalised; the
-        // near, far, top and bottom planes have no x), then put back, so the meshes past the 4:3 edges are drawn and
-        // the camera's own planes are untouched.
+        // A drawable's visibility test (0x232b30: its bounding sphere against the selected camera's six world-space
+        // frustum planes at +0x2c0, 0x290f90, the camera at *0x3b0988; then a size cut). The planes are near and far (0
+        // and 1, opposite normals) and two pairs of side planes through the camera's position, each pair symmetric
+        // about the view direction. Widescreen: the wider pair (the horizontal one, its half-angle the larger) is turned
+        // out to the wide view's half-angle (tan h / sx) for the call, still through the camera, then put back, so the
+        // meshes past the 4:3 edges are drawn and the camera's own planes are untouched.
+        bool widenPlanes(float p[6][4], float sx)
+        {
+            using V = std::array<float, 3>;
+            auto dot = [](const float *a, const float *b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
+            const float *forward = p[0];
+            if (std::fabs(dot(forward, forward) - 1.0f) > 0.01f || dot(forward, p[1]) > -0.99f)
+                return false;
+            // The camera: where three side planes meet (n . c + d = 0).
+            const float *a = p[2], *b = p[3], *c = p[4];
+            const V bc{b[1] * c[2] - b[2] * c[1], b[2] * c[0] - b[0] * c[2], b[0] * c[1] - b[1] * c[0]};
+            const V ca{c[1] * a[2] - c[2] * a[1], c[2] * a[0] - c[0] * a[2], c[0] * a[1] - c[1] * a[0]};
+            const V ab{a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
+            const float det = dot(a, bc.data());
+            if (std::fabs(det) < 1e-4f)
+                return false;
+            V camera;
+            for (int i = 0; i < 3; ++i)
+                camera[i] = -(a[3] * bc[i] + b[3] * ca[i] + c[3] * ab[i]) / det;
+            const int first = std::fabs(dot(p[2], forward)) >= std::fabs(dot(p[4], forward)) ? 2 : 4;
+            for (int k = first; k < first + 2; ++k)
+            {
+                float *n = p[k];
+                const float along = dot(n, forward);
+                V side{n[0] - along * forward[0], n[1] - along * forward[1], n[2] - along * forward[2]};
+                const float across = std::sqrt(side[0] * side[0] + side[1] * side[1] + side[2] * side[2]);
+                if (across < 1e-4f)
+                    return false;
+                const float h = std::atan(std::fabs(along) / across / sx);
+                const float s = std::copysign(std::sin(h), along), co = std::cos(h) / across;
+                for (int i = 0; i < 3; ++i)
+                    n[i] = s * forward[i] + co * side[i];
+                n[3] = -dot(n, camera.data());
+            }
+            return true;
+        }
         void visible(uint8_t *ram, R5900Context *ctx, Runtime *rt)
         {
             const float sx = options::clipScaleX();
@@ -646,20 +683,50 @@ namespace amp
             uint8_t *planes = ram + ((camera + 0x2c0u) & 0x1FFFFFFu);
             float kept[6][4], wide[6][4];
             std::memcpy(kept, planes, sizeof kept);
-            for (int k = 0; k < 6; ++k)
+            std::memcpy(wide, kept, sizeof wide);
+            if (!widenPlanes(wide, sx))
             {
-                const float *n = kept[k];
-                const float len = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
-                const float x = n[0] * sx, lenWide = std::sqrt(x * x + n[1] * n[1] + n[2] * n[2]);
-                const float f = lenWide > 0.0f ? len / lenWide : 1.0f;
-                wide[k][0] = x * f;
-                wide[k][1] = n[1] * f;
-                wide[k][2] = n[2] * f;
-                wide[k][3] = n[3] * f;
+                func_0x232b30(ram, ctx, rt);
+                return;
             }
             std::memcpy(planes, wide, sizeof wide);
             func_0x232b30(ram, ctx, rt);
             std::memcpy(ram + ((camera + 0x2c0u) & 0x1FFFFFFu), kept, sizeof kept);
+        }
+
+        // A song's player setup (0x155628, from 0x14c4a8: `this` a track's player part at +0xe4). Only when the game's
+        // autopilot flag (+0x100 of *0x435f14) is set (or in the attract mode, *0x440d44 +0x44) does it make the track's
+        // autoplayer (*(this + 0x20), its +0 pointing back at `this`), copying the flag into its +0x18, which then
+        // decides whether it plays the gems. So the cheat can be turned on in a song already playing, the autoplayer is
+        // always made (the flag set for the call), its +0x18 the flag as it was; each is kept for native::autopilot.
+        struct Autoplayer
+        {
+            uint32_t owner = 0, state = 0;
+        };
+        std::array<Autoplayer, 8> g_autoplayers{};
+        size_t g_autoplayersNext = 0;
+        bool g_autopilotSet = false;
+        bool inRamWord(uint32_t a) { return a >= 0x100000u && a < 0x1FFF000u; }
+        void playerSetup(uint8_t *ram, R5900Context *ctx, Runtime *rt)
+        {
+            const uint32_t owner = ctx->r[4].uw[0];
+            const uint32_t flagAt = rd32(ram, 0x435f14u) + 0x100u;
+            if (!inRamWord(flagAt))
+            {
+                func_0x155628(ram, ctx, rt);
+                return;
+            }
+            const uint32_t flag = rd32(ram, flagAt), one = 1;
+            std::memcpy(ram + flagAt, &one, 4);
+            func_0x155628(ram, ctx, rt);
+            std::memcpy(ram + flagAt, &flag, 4);
+            const uint32_t state = rd32(ram, owner + 0x20u);
+            if (inRamWord(state) && rd32(ram, state) == owner)
+            {
+                std::memcpy(ram + state + 0x18u, &flag, 4);
+                g_autoplayers[g_autoplayersNext] = {owner, state};
+                g_autoplayersNext = (g_autoplayersNext + 1) % g_autoplayers.size();
+            }
         }
 
         // The task manager's timer (0x282c70: a Timer's milliseconds, the EE's cycle counter since it started; the task
@@ -780,10 +847,26 @@ namespace amp
         std::printf("\n");
     }
 
+    void native::autopilot(uint8_t *ram, bool on)
+    {
+        if (!on && !g_autopilotSet)
+            return;
+        for (const Autoplayer &g : g_autoplayers)
+        {
+            // Still that player's (a freed one's memory is not written).
+            if (!g.owner || rd32(ram, g.owner + 0x20u) != g.state || rd32(ram, g.state) != g.owner)
+                continue;
+            const uint32_t value = on ? 1u : 0u;
+            std::memcpy(ram + ((g.state + 0x18u) & 0x1FFFFFFu), &value, 4);
+        }
+        g_autopilotSet = on;
+    }
+
     void installNative(Runtime &, bozo::port::Registry &r)
     {
         r.registerFunction(0x215f30, meshDraw); // the PS2 mesh's draw (AMP_TRACE_MESHES)
         r.registerFunction(0x232b30, visible);  // a drawable's visibility test (widescreen: the planes widened)
         r.registerFunction(0x282c70, songClock); // a Timer's time (the song's clock: the audio offset)
+        r.registerFunction(0x155628, playerSetup); // a song's player setup (the autopilot cheat's copies)
     }
 } // namespace amp

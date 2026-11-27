@@ -216,6 +216,7 @@ int main(int argc, char **argv)
         // The cheats (runtime/amp_options.cpp: AMP_AUTOPILOT, AMP_UNLOCK_ALL, AMP_INFINITE_ENERGY, or the window's
         // Amplitude tab), applied to the game's memory once a frame.
         amp::options::applyCheats(d.runtime().memory.ram());
+        amp::native::autopilot(d.runtime().memory.ram(), amp::options::cheat(amp::options::Cheat::Autopilot));
         // AMP_WATCH=<address>[,<address>...]: a word of RAM printed at each frame end where it changed (finding what
         // overwrites a structure).
         if (static const char *watch = std::getenv("AMP_WATCH"); watch)

@@ -98,7 +98,8 @@ namespace amp::options
         // before the FreQ's progress (the game unlocks Neotropolis when Basic Concepts Training is beaten).
         flag(ram, Cheat::UnlockAll, 0x440d44u, 0x8cu);
         // The game's own autopilot cheat: its debug toggle 0x110390 flips +0x100 of the object at *0x435f14 (and prints
-        // "CHEAT: autopilot mode"): the game plays the gems itself.
+        // "CHEAT: autopilot mode"): the game plays the gems itself. A song's players copy it when the song is set up
+        // (runtime/amp_native.cpp: autopilot), which the frame's end keeps in step.
         flag(ram, Cheat::Autopilot, 0x435f14u, 0x100u);
     }
 

@@ -320,7 +320,7 @@ Play-test switches of the runner (`runtime/amp_main.cpp`), for unattended runs:
 |---|---|
 | `AMP_UNLOCK_ALL=1` | the game's unlock-all flag: every arena and song open |
 | `AMP_INFINITE_ENERGY=1` | the energy meter held full: a whole song without input |
-| `AMP_AUTOPILOT=1` | the game's autopilot cheat (`+0x100` of `*0x435f14`, its debug toggle `0x110390`): the game plays the gems |
+| `AMP_AUTOPILOT=1` | the game's autopilot cheat (`+0x100` of `*0x435f14`, its debug toggle `0x110390`): the game plays the gems. A song's setup (`0x155628`) makes each track's autoplayer only when the flag is set, copying it to the autoplayer's `+0x18`; the port has it always made (flag set for the call, `+0x18` as the flag was) and keeps `+0x18` in step, so the cheat also starts and stops in a song already playing |
 | `AMP_UNPACED=1` | the window runs as fast as it can (captures) |
 | `AMP_DUMP_RAM_AT=<frame>,...` | RAM written to `build/ram_<frame>.bin` |
 | `AMP_WATCH=<address>,...` | a RAM word printed whenever it changes |
@@ -522,11 +522,13 @@ monitor's), which no setting here can see. Measured against a console: not done 
 **Widescreen and the player's options** (`runtime/amp_options.*`, the window's Amplitude tab
 `runtime/app/amp_settings_ui.cpp`). The camera is PsCam (`0x2128f0`, vtable `0x3d2950` slot 3, the camera selected at
 `*0x3b0988`): it builds the view-projection `0x43c200` from its projection (`+0x160`) and world (`+0x120`), and
-keeps six frustum planes in its own space at `+0x2c0`, which a drawable's visibility test (`0x232b30`: its bounding
-sphere, `0x290f90`, then a size cut) checks. Widescreen: each native program start drawing into a displayed frame
-(`gs::drawsToFrame`) scales its clip matrix's x by 3/4 (the particles' corner offset too), so the screen's mapping and
-the clip tests after follow; the visibility test runs with the planes' x scaled the same way (renormalised, put back
-after), so the scenery past the 4:3 edges is drawn; the picture is shown 16:9 (`bozo::app::setPictureAspect`, a
+keeps six frustum planes in world space at `+0x2c0` (near and far, then two symmetric pairs of side planes through
+the camera's position), which a drawable's visibility test (`0x232b30`: its bounding sphere, `0x290f90`, then a size
+cut) checks. Widescreen: each native program start drawing into a displayed frame (`gs::drawsToFrame`) scales its clip
+matrix's x by 3/4 (the particles' corner offset too), so the screen's mapping and the clip tests after follow; the
+visibility test runs with the horizontal pair turned out to the wide half-angle (`tan h / 0.75`, still through the
+camera; put back after), so the scenery past the 4:3 edges is drawn. (Scaling the planes' world x instead, the first
+try, tilted them off the camera and culled the gameplay's target rings.) the picture is shown 16:9 (`bozo::app::setPictureAspect`, a
 BozoEngine addition) and a movie's backdrop stays 4:3 in the middle. The HUD and menus are meshes under an
 orthographic camera: scaled the same way, they stay 4:3 in the middle (their black bands end at the 4:3 edges).
 Render-to-texture images are not widened. Sharper effects: those images drawn at twice their GS size

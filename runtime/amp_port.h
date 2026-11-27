@@ -28,6 +28,9 @@ namespace amp
         // false for VU1 to run it.
         bool program(uint32_t pcBytes, const uint8_t *vuData, uint32_t top, uint32_t &tpc);
         void report();
+        // The autopilot cheat in the song's players (their copies of the game's flag, made at the song's setup): set to
+        // `on`, or put back once when it was set here.
+        void autopilot(uint8_t *ram, bool on);
     }
     bool ipuSite(uint8_t *ram, R5900Context *ctx, Runtime *rt, uint32_t pc);
     // The skinning's interlocked COP2 moves (runtime/amp_vu1.cpp: the held-back VU0 outputs committed first).
