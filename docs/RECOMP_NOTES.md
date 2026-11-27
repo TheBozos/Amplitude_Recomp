@@ -480,6 +480,20 @@ Render-to-texture images are not widened. Sharper effects: those images drawn at
 undone when turned off: the flags they set put back to 0).
 
 
+**The title's sound and the intro's timing.** The title screen is not silent: recorded from boot with no input
+(`--wav`), its music starts with it (frame ~6240) and loops (RMS 3400-4000). What is wrong is before it. The intro
+movie (`AMP.PSS`: 66.1 s of MPEG-2 and 66.2 s of 48 kHz 16-bit stereo PCM, `SShd` type 1) is played by the movie
+loop `0x1aec48` (its poll at `0x1af074`: `sceMpegIsEnd`, or after 5.27 s Start / Cross skips it), which ends with
+the stream's last picture shown (BozoEngine: two fields a picture), at frame ~6240, the title right after. In real
+time the window keeps 60 frames a second all through (a paced run: frame 6264 at 105 s), so the pictures play at
+their speed. But the EE's time, which the IOP's mixer follows, runs 24.2 ms a frame from boot to the end of the movie
+(frames 1000 to 5000 against the sound recorded: 21.6, 45.8, 70.1, 94.3, 118.6 s) and 16.67 ms a frame from the
+title on: the mixer makes the logos' and the movie's sound 1.45 times faster than the frames go. In the window the
+output's queue drops the excess, and the movie's music, consumed early, ends long before its last picture (the
+recording: music to ~98 s of sound time, silence from ~104 s, the title's music from ~148 s). Next: why the EE runs
+ahead of the frames while the movie loop and the boot's logos poll (they do not go through the game's flip
+`0x21b248`; the port ends a frame at `sceGsPutDispEnv`), a BozoEngine pacing question.
+
 ## Where it stands
 
 The game boots through the logos and the intro movie (with its music) to the title screen, the menus, the FreQmaker,
@@ -490,7 +504,8 @@ the stream fix; not compared with the console yet).
 
 ## Next steps
 
-1. The title's sound against the console; the main menu's black wedge against the console.
+1. The boot's and the intro movie's EE time running 1.45 times ahead of the frames (its sound dropped, ending
+   early); the main menu's black wedge against the console.
 2. Timing: input and sound against the beat, compared with the console.
 3. Native draws: the renderer answered at its own functions instead of through VIF1 / VU1 / GIF.
 4. Upstream to BozoEngine: the IRX translator fix and the mixer's output IRQ are merged; still a native `sceIoctl`
