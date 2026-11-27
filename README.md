@@ -77,7 +77,8 @@ Captured from the current build at 960x720.
 | ![Select a song](docs/screenshots/select-song.jpg) | ![The warp into the song](docs/screenshots/song-intro.jpg) | ![Boom, in Neotropolis](docs/screenshots/gameplay.jpg) |
 | ![Tracks turned on, the score climbing](docs/screenshots/gameplay-score.jpg) | ![Player stats after the song](docs/screenshots/player-stats.jpg) | ![Elektro Kore: Cool Baby](docs/screenshots/gameplay-elektro-kore.jpg) |
 | ![Two players](docs/screenshots/gameplay-2p.jpg) | ![Four players (multitap)](docs/screenshots/gameplay-4p.jpg) | ![Remix mode](docs/screenshots/remix.jpg) |
-| ![Duel](docs/screenshots/duel.jpg) | ![Basic training, the blasters' glows](docs/screenshots/gameplay-training.jpg) | |
+| ![Duel](docs/screenshots/duel.jpg) | ![Basic training, the blasters' glows](docs/screenshots/gameplay-training.jpg) | ![PC SETTINGS in the Options menu](docs/screenshots/options-pc-settings.jpg) |
+| ![PC SETTINGS in the pause menu](docs/screenshots/pause-pc-settings.jpg) | | |
 
 ## Goal
 
@@ -147,11 +148,16 @@ runner prints where the game stops and what is not native yet. Play-test switche
 `AMP_INFINITE_ENERGY`, `AMP_AUTOPILOT`, `--pad-script2`..`4` for players 2-4) and a pad script that reaches a song are in
 [docs/RECOMP_NOTES.md](docs/RECOMP_NOTES.md#gameplay).
 
+The game's own Options menu and pause menu have a **PC SETTINGS** entry: it opens the Amplitude tab below (the video
+options, the cheats, save states and quitting), steered with the gamepad. The port builds it at startup from your disc
+(the menus' files edited in memory; `AMP_NO_PC_MENU=1` keeps the game's own).
+
 In the window, F2 (or a gamepad's middle button) opens the settings: Controls, Video (window mode, resolution, render
 scale), Save states, and an Amplitude tab with widescreen (16:9: the 3D through a wider camera, the HUD and menus kept
 4:3 in the middle), sharper effects (the render-to-texture pictures at twice their size), an audio offset (the gems
 and the hits held back to the music as the PC plays it, 50 ms by default), the cheats (the game's own
-autopilot, infinite energy, every arena and song unlocked) and quitting the game. The graphics options are kept in
+autopilot, infinite energy, every arena and song unlocked), save states (a slot, Save, Load) and quitting the game.
+The graphics options are kept in
 `amplitude.ini` in the user folder; `AMP_WIDESCREEN=1`, `AMP_AUDIO_OFFSET=<ms>`, `AMP_AUTOPILOT=1`, `AMP_INFINITE_ENERGY=1` and
 `AMP_UNLOCK_ALL=1` set them from the environment.
 

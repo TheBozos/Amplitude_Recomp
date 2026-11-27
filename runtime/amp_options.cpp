@@ -161,4 +161,68 @@ namespace amp::options
         if (q)
             q();
     }
+
+    namespace
+    {
+        std::mutex g_openMutex;
+        std::function<void()> g_open;
+    }
+
+    void setOpenSettings(std::function<void()> open)
+    {
+        std::lock_guard lock(g_openMutex);
+        g_open = std::move(open);
+    }
+
+    void openSettings()
+    {
+        std::function<void()> o;
+        {
+            std::lock_guard lock(g_openMutex);
+            o = g_open;
+        }
+        if (o)
+            o();
+    }
+
+    namespace
+    {
+        std::mutex g_stateMutex;
+        std::function<void(int)> g_save, g_load;
+    }
+
+    void setStateActions(std::function<void(int)> save, std::function<void(int)> load)
+    {
+        std::lock_guard lock(g_stateMutex);
+        g_save = std::move(save);
+        g_load = std::move(load);
+    }
+
+    bool hasStates()
+    {
+        std::lock_guard lock(g_stateMutex);
+        return g_save && g_load;
+    }
+
+    void saveState(int slot)
+    {
+        std::function<void(int)> f;
+        {
+            std::lock_guard lock(g_stateMutex);
+            f = g_save;
+        }
+        if (f)
+            f(slot);
+    }
+
+    void loadState(int slot)
+    {
+        std::function<void(int)> f;
+        {
+            std::lock_guard lock(g_stateMutex);
+            f = g_load;
+        }
+        if (f)
+            f(slot);
+    }
 } // namespace amp::options

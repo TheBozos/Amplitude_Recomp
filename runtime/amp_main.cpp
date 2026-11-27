@@ -8,6 +8,8 @@
 #include "bozo/port.h"
 #include "amp_functions.h"
 #include "amp_options.h"
+#include "amp_ark_overlay.h"
+#include "amp_menu.h"
 #include "amp_port.h"
 #include <algorithm>
 #include <cstdio>
@@ -21,6 +23,7 @@
 #include "bozo/app/app.h"
 #include "bozo/app/audio_device.h"
 #include "bozo/app/device_pad.h"
+#include "bozo/app/panel.h"
 #include "bozo/app/window.h"
 #endif
 
@@ -154,6 +157,12 @@ int main(int argc, char **argv)
 #else
     amp::options::load({});
 #endif
+    // The PC SETTINGS entry in the game's Options and pause menus: their files edited from the disc (amp_menu.h).
+    // AMP_NO_PC_MENU=1 keeps the game's own; AMP_ARK_OVERLAY_DIR (development) takes the files from a folder instead.
+    if (const char *overlay = std::getenv("AMP_ARK_OVERLAY_DIR"); overlay && *overlay)
+        amp::ark::loadFolder(overlay);
+    else if (!std::getenv("AMP_NO_PC_MENU"))
+        amp::menu::prepare(options.iso);
     options.realTime = window;
     options.gameTag = "SCUS-97258"; // a save state loads only into Amplitude
     bozo::host::FreeHost host(options);
@@ -323,10 +332,13 @@ int main(int argc, char **argv)
         game.stop = [&] { host.requestStop(); };
         amp::options::setQuit([&] { host.requestStop(); }); // the Amplitude tab's Quit
         amp::options::registerSettingsTab();
+        // The game's PC SETTINGS entry (runtime/amp_menu.cpp) opens the settings on the Amplitude tab.
+        amp::options::setOpenSettings([] { bozo::app::requestSettings("Amplitude"); });
         bozo::app::setPictureAspect(amp::options::widescreen() ? 16.0f / 9.0f : 0.0f);
         game.framesEnded = [&] { return host.framesEnded(); };
         game.saveState = [&](int slot) { host.requestSave(bozo::app::stateSlotPath(slot)); };
         game.loadState = [&](int slot) { host.requestLoad(bozo::app::stateSlotPath(slot)); };
+        amp::options::setStateActions(game.saveState, game.loadState); // the Amplitude tab's save states too
         // On the screen, and in the log (a load refused at startup says why there too).
         host.onStateMessage = [](bool, const std::string &message)
         {

@@ -1,7 +1,9 @@
 // The window's Amplitude tab (F2, beside Controls and Video; a gamepad's middle button opens it too): the graphics
-// options, the cheats and quitting (runtime/amp_options.h). Only in the window build.
+// options, the cheats, save states and quitting (runtime/amp_options.h); the game's PC SETTINGS entry opens it
+// (runtime/amp_menu.cpp). Only in the window build.
 #include "amp_options.h"
 
+#include "bozo/app/panel.h"
 #include "bozo/app/settings_tabs.h"
 #include "bozo/app/window.h"
 #include "imgui.h"
@@ -53,6 +55,23 @@ namespace amp::options
                 setCheat(Cheat::UnlockAll, unlock);
             ImGui::TextDisabled("The game's own unlock-all flag; turned off, the progress on the memory card counts again.");
             ImGui::TextDisabled("Cheats last for this session only.");
+
+            if (hasStates())
+            {
+                // The slot is the window's (F5 / F7's, the Save states tab's, where each slot's picture is).
+                ImGui::SeparatorText("Save states");
+                int slot = bozo::app::stateSlot();
+                ImGui::SetNextItemWidth(160);
+                if (ImGui::SliderInt("Slot", &slot, 0, bozo::app::kStateSlots - 1))
+                    bozo::app::setStateSlot(slot);
+                ImGui::TextUnformatted(bozo::app::stateSlotSummary(bozo::app::stateSlot()).c_str());
+                if (ImGui::Button("Save here"))
+                    saveState(bozo::app::stateSlot());
+                ImGui::SameLine();
+                if (ImGui::Button("Load this slot"))
+                    loadState(bozo::app::stateSlot());
+                ImGui::TextDisabled("The Save states tab shows every slot with its picture; F5 saves, F7 loads.");
+            }
 
             ImGui::SeparatorText("Game");
             static bool confirm = false;

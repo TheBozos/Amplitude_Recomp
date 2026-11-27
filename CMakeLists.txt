@@ -121,7 +121,9 @@ set(amp_runtime_sources ${amp_port_sources} $<TARGET_OBJECTS:amp_audio_code> $<T
 list(FILTER amp_runtime_sources EXCLUDE REGEX "amp_main\\.cpp$")
 
 add_executable(amp-headless runtime/amp_main.cpp ${amp_runtime_sources})
-target_link_libraries(amp-headless PRIVATE amp_game bozo_host)
+# zlib: the menus' scenes recompressed (runtime/amp_menu_files.cpp).
+find_package(ZLIB REQUIRED)
+target_link_libraries(amp-headless PRIVATE amp_game bozo_host ZLIB::ZLIB)
 target_include_directories(amp-headless PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${amp_audio_gen})
 add_dependencies(amp-headless amp_native_audio)
 target_compile_definitions(amp-headless PRIVATE AMP_DEFAULT_ELF="${amp_image}" AMP_DEFAULT_ISO="${AMP_ISO}"
@@ -133,7 +135,7 @@ endif()
 # The game in a window (SDL3, OpenGL 3.3): the same port, the PC's pads and sound.
 if(AMP_WINDOW)
   add_executable(amplitude runtime/amp_main.cpp runtime/app/amp_settings_ui.cpp ${amp_runtime_sources})
-  target_link_libraries(amplitude PRIVATE amp_game bozo_host bozo_app)
+  target_link_libraries(amplitude PRIVATE amp_game bozo_host bozo_app ZLIB::ZLIB)
   target_include_directories(amplitude PRIVATE ${CMAKE_SOURCE_DIR}/runtime ${amp_audio_gen})
   add_dependencies(amplitude amp_native_audio)
   target_compile_definitions(amplitude PRIVATE AMP_WITH_WINDOW AMP_DEFAULT_ELF="${amp_image}"

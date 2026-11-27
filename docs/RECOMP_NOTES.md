@@ -566,6 +566,68 @@ The intro now ends about 3,770 frames earlier: the title from frame ~2470 (it wa
 The pad scripts from boot in these notes (the song's, Multi's) were written before and give the old frames: move
 their presses after the intro 3,770 frames earlier. States keep their own frame numbers.
 
+## The game's menus: PC SETTINGS
+
+The Options menu and the pause menu have a PC SETTINGS entry, in the game's own style. Selecting it opens the window's
+settings on the Amplitude tab: the video options, the cheats, save states and Quit.
+
+**The menus are data.** `metagame/gen/meta.ui.bin` defines every screen and panel as a binary DataArray. It holds a
+version byte, the source files' names, then the root list. A list is a u16 count, a u32 id, a u32 file index, its
+elements' kinds (2 bits each, in u32 words: 0 int, 1 symbol, 2 float, 3 list), then the elements. A symbol is a u32
+length and its bytes. A panel lists its buttons, `(button_comp resume buttonStyle2 01_but)`, by name, style and its
+scene's object (`s_pause_01_but`), with its `(navigator (vertical ...))` order and its `(focus ...)`. A screen names
+its panels and its `screen_transitions` (button, screen). The labels come from `gen/english_screens.txt.bin` and the
+help lines from `gen/english_messages.txt.bin`, both the same format, keyed by object name and by
+`<panel>_<button>_HELP`. A button's object is a Text and a Mesh (its highlight) in the panel's scene,
+`metagame/o_main.rnd` or `metagame/s_pause.rnd`. That scene is Harmonix's container: magic `AFDEBECC`, the header's
+length, the blocks (1), the whole size, the block's size, padded with `0xCC`, then one gzip stream. Inside is a
+directory: version 10, the objects' (type, name), then each object's data ending with `AD DE AD DE`.
+
+**The files edited** (`runtime/amp_menu_files.cpp`, at startup, from the player's disc):
+
+- A button after each panel's last, its name added to the navigator.
+- Its Text and Mesh cloned from the last button's a row lower (24 units: the Mesh's local y at +0x30 and world z at
+  +0x64, the Text's world z), the Text saying PC SETTINGS.
+- The clones added to the background's children and the view's draw lists.
+- The panel, its glow and its background a row taller (their vertices below the middle moved down).
+- The Options panel's help line, `o_main_pc_settings_HELP`.
+
+**The archive overlay** (`runtime/amp_ark_overlay.cpp`). The game reads `GEN/MAIN.ARK` with `sceCdRead`, 32 sectors at
+a time in the file's order, and finds each file by its table of contents' offset and size. Pointing an entry at
+sectors past the disc's end broke the boot (a jump to 0 at frame 82, before the file was read), even with the file
+unchanged: the reader goes by the offsets. So an edited file keeps its place and its size. The port lays its bytes,
+padded with zeros, over whatever sectors the engine read for that file.
+
+**Making the edits fit:**
+
+- The room comes from what only the demo disc shows: in `meta.ui`, its four error screens and dialogs (1,006 bytes);
+  in the messages, two demo messages.
+- The source files' names in `meta.ui` must stay. Cut to one letter each, the boot faulted at frame 4: the game finds
+  a screen's lists by them.
+- The scenes are recompressed with zlib (level 9). Their container header is written 32 bytes long instead of 216,
+  since the game goes by its length field. With that, a scene with two more objects fits: 3,301 of 3,452 bytes for
+  the Options panel, 2,960 of 3,172 for the pause panel.
+- If the disc is not the one expected or an edit does not fit, all four files stay the game's.
+
+**The entry's press** (`runtime/amp_menu.cpp`). The game has nothing for `pc_settings` to do: it has no transition, and
+selecting it does nothing. Following the press handler was a dead end. The transitions are resolved to screen objects
+when a screen loads, and a press passes neither the button's name nor the target screen's (traced with a temporary
+call hook that matched the names' addresses in a0-a3 and in what they point to). The port watches the focus instead:
+
+- A panel (the freq_panel class, vtable `0x3cfc28`) keeps its focused component at +0x88, and a component keeps its
+  name at +4. Found by diffing RAM with each Options button focused in turn.
+- The panel's draw (`0x19e0d0`, once a frame for each panel shown) is wrapped to note when `pc_settings` has the focus.
+- A Cross newly down in `scePadRead`'s data, any pad, within two vblanks of that opens the settings. It goes through
+  BozoEngine's `bozo::app::requestSettings("Amplitude")`, taken at the panel's next draw on the window's thread.
+- While open, the settings hold the gamepads.
+
+`AMP_TRACE_MENU=1` prints each panel's focus as it changes, and each Cross. `AMP_NO_PC_MENU=1` keeps the game's own
+files. `AMP_ARK_OVERLAY_DIR=<folder>` (development) takes `meta.ui.bin`, `english_messages.txt.bin`, `o_main.rnd` and
+`s_pause.rnd` from a folder instead.
+
+Checked: both entries appear and open the settings; a Solo song from boot to Freestyle; the Options menu's Game
+Settings and Credits.
+
 ## Where it stands
 
 The game boots through the logos and the intro movie (with its music) to the title screen, the menus, the FreQmaker,

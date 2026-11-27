@@ -49,6 +49,17 @@ namespace amp::options
     void setQuit(std::function<void()> quit);
     void quit();
 
+    // The settings window opened on the Amplitude tab (the game's PC SETTINGS entry, runtime/amp_menu.cpp): the
+    // window's request (bozo::app::requestSettings), nothing in a headless run.
+    void setOpenSettings(std::function<void()> open);
+    void openSettings();
+
+    // Save states from the Amplitude tab: the window's own save and load of a slot (the Save states tab's, F5 / F7's).
+    void setStateActions(std::function<void(int)> save, std::function<void(int)> load);
+    bool hasStates();
+    void saveState(int slot);
+    void loadState(int slot);
+
     // The window's tab (runtime/app/amp_settings_ui.cpp, the window build only).
     void registerSettingsTab();
 }

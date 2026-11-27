@@ -5,6 +5,7 @@
 // line is listed as a "native 0xADDR" external: the instruction is replaced by the handler, inline.
 // docs/RECOMP_NOTES.md says why each one is there.
 #include "amp_port.h"
+#include "amp_ark_overlay.h"
 #include "bozo/ee/dispatcher.h"
 #include <cstring>
 #include <cstdio>
@@ -28,6 +29,9 @@ namespace amp
             const uint32_t ra = ctx->r[31].uw[0];
             if (f)
                 f->handler(*l, g);
+            // The archive's first sector, for the overlay's reads (amp_ark_overlay.h).
+            if (search && ctx->r[2].sw[0] == 1 && path.find("MAIN.ARK") != std::string::npos)
+                ark::setArchiveSector(g.read32(g.arg(0)));
             static const bool on = std::getenv("AMP_TRACE_FILES") != nullptr;
             if (on)
                 std::printf("[amp:file] %s(\"%s\"%s) = %d (from %x)\n", Name, path.c_str(),
@@ -37,7 +41,7 @@ namespace amp
         constexpr char kSceOpen[] = "sceOpen", kSceGetstat[] = "sceGetstat", kSceCdSearchFile[] = "sceCdSearchFile";
 
         // sceCdRead(lbn, sectors, buffer, mode): the engine's answer; AMP_TRACE_FILES=1 prints the sectors read.
-        void traceCdRead(uint8_t *, R5900Context *ctx, Runtime *rt)
+        void traceCdRead(uint8_t *ram, R5900Context *ctx, Runtime *rt)
         {
             bozo::libs::Libraries *l = libraries();
             const bozo::libs::Function *f = l ? l->find("sceCdRead") : nullptr;
@@ -45,6 +49,9 @@ namespace amp
             const uint32_t lbn = g.arg(0), n = g.arg(1), to = g.arg(2), ra = ctx->r[31].uw[0];
             if (f)
                 f->handler(*l, g);
+            // The archive overlay's files (amp_ark_overlay.h) laid over the sectors read.
+            if (ctx->r[2].sw[0] == 1)
+                ark::overlay(ram, lbn, n, to);
             static const bool on = std::getenv("AMP_TRACE_FILES") != nullptr;
             if (on)
                 std::printf("[amp:file] sceCdRead(lbn %u, %u sectors, to %x) = %d (from %x)\n", lbn, n, to, ctx->r[2].sw[0], ra);
@@ -68,6 +75,7 @@ namespace amp
     {
         installRender(rt, r);
         installIpu(rt, r);
+        installMenu(r);
         installNative(rt, r);
         r.registerFunction(0x31a558, traceFile<kSceOpen>);
         r.registerFunction(0x31b610, traceFile<kSceGetstat>);
