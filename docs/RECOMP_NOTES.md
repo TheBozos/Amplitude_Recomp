@@ -194,7 +194,13 @@ interpreter runs them all).
   TEX0 is whatever texture was set last, here DECAL, and the renderer's DECAL outputs the texel: 1.0 without a texture.
   The texture function is now TEX0's for textured primitives only. Left: a black wedge top left of the main menu,
   large triangles that by the GS's rules are opaque black (a white-to-grey palette, all alpha 0x80, black vertices);
-  probably the scene's own dark structure.
+  probably the scene's own dark structure. Looked at again with the native renderer (a menu state from boot, frame
+  3250, `AMP_PICK` with the fog fields): still there. It is a near mesh (GS Z 7,900-11,500, its triangles reaching x
+  -847), image 8's three lights (sub-program `0x260`) with an ambient of 0 (vf25 = 0, 0, 0, 1, as in every batch of
+  the scene), its faces turned from the lights; no fog (FGE 0), normal blending (ALPHA `0x44`), a 4-bit texture
+  modulated by the black vertices. VU1's own microcode (`AMP_NATIVE=0`) gives the same black, so if the console
+  draws it otherwise, the difference is in the lights the game sets up (the EE's), not in the drawing. Not settled
+  without a picture of the console's menu.
 - **Texture alpha doubled.** The decoder rescaled texel alpha to 255 (0x80 = opaque) and the renderer's shader scales
   it by 255 / 128 again, as the engine's textures carry the GS's alpha: every partly transparent texel drew at twice
   its strength (the fonts' faint cell outlines, alpha 9 of 128, boxed every glyph and space; the main menu's light
@@ -530,6 +536,10 @@ right after. In the window, the frame pacer holds a frame that spans two periods
 (`amp_main.cpp`), so the movie shows each picture for two refreshes: 300 pictures in 10.0 s of real time. Only the
 movie player calls `sceGsSyncV` (about 2,880 calls from boot to the menus, one a picture, plus a few in the boot at
 `0x210bb8`), so the game's own frames (the flip `0x21b248`) are untouched.
+
+The intro now ends about 3,770 frames earlier: the title from frame ~2470 (it was ~6240), START taken there at 2700.
+The pad scripts from boot in these notes (the song's, Multi's) were written before and give the old frames: move
+their presses after the intro 3,770 frames earlier. States keep their own frame numbers.
 
 ## Where it stands
 

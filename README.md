@@ -141,7 +141,8 @@ PS2X_PAD_NO_HOST=1 scripts/bench_run.sh 10 "boot" scripts/run.sh --frames 600
 
 `scripts/run.sh` runs `amp-headless`; `AMP_WINDOW_RUN=1` runs the `amplitude` window instead (`--hidden`, `--mute`
 for unattended runs; `AMP_CAPTURE_FRAMES=first:last:step` with `PS2X_CAPTURE_WINDOW_DIR` saves pictures). The intro
-lasts about 6,200 frames; `--pad-script` takes `frame:BUTTON/frames` entries (e.g. `6500:START/8` at the title). The
+lasts about 2,470 frames (a movie picture is one frame of two fields); `--pad-script` takes `frame:BUTTON/frames`
+entries (e.g. `2700:START/8` at the title). The
 runner prints where the game stops and what is not native yet. Play-test switches (`AMP_UNLOCK_ALL`,
 `AMP_INFINITE_ENERGY`, `AMP_AUTOPILOT`, `--pad-script2`..`4` for players 2-4) and a pad script that reaches a song are in
 [docs/RECOMP_NOTES.md](docs/RECOMP_NOTES.md#gameplay).

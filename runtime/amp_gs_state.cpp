@@ -1068,11 +1068,12 @@ namespace amp::gs
                         if (!((s0 >= 0 && s1 >= 0 && s2 >= 0) || (s0 <= 0 && s1 <= 0 && s2 <= 0)))
                             continue;
                         std::printf("[amp:pick] at=%.0f,%.0f type=%u tex=%d tex0=%llx tex1=%llx clamp=%llx abe=%d alpha=%llx test=%llx fst=%d %ux%u "
-                                    "xy=(%.0f,%.0f)(%.0f,%.0f)(%.0f,%.0f) uvq=(%.3f %.3f %.4f)(%.3f %.3f %.4f)(%.3f %.3f %.4f) rgba=%08x z=%u\n",
+                                    "xy=(%.0f,%.0f)(%.0f,%.0f)(%.0f,%.0f) uvq=(%.3f %.3f %.4f)(%.3f %.3f %.4f)(%.3f %.3f %.4f) rgba=%08x z=%u fge=%d fog=%.2f,%.2f,%.2f fogcol=%llx\n",
                                     px, py, type, int(textured), (unsigned long long)c.tex0, (unsigned long long)c.tex1,
                                     (unsigned long long)c.clamp, int((attrs >> 6) & 1u), (unsigned long long)c.alpha,
                                     (unsigned long long)c.test, int(fst), tex ? tex->width : 0, tex ? tex->height : 0, a.x, a.y,
-                                    b.x, b.y, d.x, d.y, a.u, a.v, a.q, b.u, b.v, b.q, d.u, d.v, d.q, a.rgba, v[0].z);
+                                    b.x, b.y, d.x, d.y, a.u, a.v, a.q, b.u, b.v, b.q, d.u, d.v, d.q, a.rgba, v[0].z, int((attrs >> 5) & 1u), a.fog, b.fog, d.fog,
+                                    (unsigned long long)g_s.fogcol);
                     }
             }
             if (static const bool sum = std::getenv("AMP_CHECKSUM") != nullptr; sum) // FNV-1a over what is drawn
