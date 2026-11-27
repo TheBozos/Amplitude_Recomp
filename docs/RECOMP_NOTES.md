@@ -494,6 +494,18 @@ recording: music to ~98 s of sound time, silence from ~104 s, the title's music 
 ahead of the frames while the movie loop and the boot's logos poll (they do not go through the game's flip
 `0x21b248`; the port ends a frame at `sceGsPutDispEnv`), a BozoEngine pacing question.
 
+Narrowed down (each picture traced at the port's `sceGsPutDispEnv`): a picture takes 2.91 fields of EE time
+(14.31 M cycles), two frame ends (`sceGsSyncV`, the engine's frame boundary, and the port's `sceGsPutDispEnv`, each
+padded to `framePeriodCycles` = 1/60 s) and three vblanks, where the movie wants two. Not the disc: the drive
+(`kSectorCycles`, DVD 4x) is five times the movie's rate, `sceCdStRead` is called twice a picture, and neither
+`wholeStreamReads` off nor `timedCompletion` on changes it (the 1.96 million `sceCdSync` polls are the boot's loads,
+before the movie). Not the port's frame end: ended at `sceGsSyncV` alone (the movie loop calls it until the frames are
+even), the ratio stays 24.2 ms a frame. Not the picture's upload (`0x1b0428`: 0.02 field). What remains is the
+engine's libmpeg: `sceMpegGetPicture` (paced) finds a picture not decodable and queues the game's nodata callback, the
+feeder `0x1af548` (`sceMpegDemuxPss`), about 1000 times a picture; somewhere in those waits and handlers the EE gains
+0.9 field a picture (an idle advance to the next vblank while the thread waits for its picture is the likely one).
+That is BozoEngine's: how its paced libmpeg waits and what the kernel's idle does then.
+
 ## Where it stands
 
 The game boots through the logos and the intro movie (with its music) to the title screen, the menus, the FreQmaker,
