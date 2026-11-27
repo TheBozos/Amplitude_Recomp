@@ -286,6 +286,14 @@ data to them over SIF.
   on voice reads. Fixed in BozoEngine's `runtime/audio/mixer.cpp` (`Mixer::reachOutputIrq`: the IRQ is raised when the
   output position, one sample per output frame, reaches an IRQ address inside `0x800..0x4000`).
 
+- **The tutorial's narration crackled in the window** (not in a headless recording). The window holds the sound to the
+  PC's time (BozoEngine's `FreeHost::holdToHostTime`), and its frames run a hair off the sound card's clock: the game
+  makes a steady 800 samples a frame, the budget was a few samples short, and the surplus was cut. That was 826 cuts
+  of 1 to 16 samples in two and a half minutes of the tutorial, each a click (counted with SDL's `dummy` audio driver
+  in a paced hidden window). BozoEngine (branch `amp/sound-squeeze`) now resamples a small surplus (up to 5 % of a
+  frame) into what is allowed, and cross-fades the cut of a large one (a real leap). The window's output then has as
+  many clicks as the game's own mix (446 against 444 in 80 s of the tutorial, the voice's and the music's own).
+
 ## Gameplay
 
 The data the songs need come from `GEN/MAIN.ARK` (version 2: five-word entries, offset, name index, directory index
