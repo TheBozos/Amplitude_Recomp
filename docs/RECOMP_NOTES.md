@@ -305,9 +305,24 @@ Play-test switches of the runner (`runtime/amp_main.cpp`), for unattended runs:
 | `AMP_TRACE_SIF=<most>` | the SIF DMA transfers into the IOP's memory (address, size, first bytes) |
 | `AMP_TRACE_TARGETS=1` | the render-to-texture images and each flip's draws by frame buffer |
 
-A pad script that reaches "Boom" from boot (with `AMP_UNLOCK_ALL=1`; the arena list opens on Blastlands):
-`6470:START/6,6650:CROSS/6,6900:CROSS/6,7000:CROSS/6,7100:CROSS/6,7300:CROSS/6,7500:CROSS/6,7800:CROSS/6,9000:DOWN/6,9150:DOWN/6,9400:CROSS/6,9800:CROSS/6,10200:CROSS/6`.
-The song plays from about frame 10,800 to 22,800.
+Pad scripts from boot, for the intro as it is now (one frame a movie picture: the title from frame ~2470). These are
+the routes of a sweep of every mode on BozoEngine with #150, #160 and #161 merged (2026-11-27). Each ran in the window,
+unpaced, with captures every 250-500 frames, and with `AMP_UNLOCK_ALL=1` and `AMP_INFINITE_ENERGY=1` (the game's
+autopilot alone turns on about a sixth of the tracks: Game Over at 31 % of "Boom"). Nothing had regressed. The sound
+was recorded headless, where the WAV follows the EE's time; an unpaced window drops what the PC outran.
+
+| Route | Pad script(s) | Seen |
+|---|---|---|
+| Solo, "Boom" (Neotropolis), then Freestyle | `2700:START/6,2880:CROSS/6,3130:CROSS/6,3230:CROSS/6,3330:CROSS/6,3530:CROSS/6,3730:CROSS/6,4030:CROSS/6,5230:DOWN/6,5380:DOWN/6,5630:CROSS/6,6030:CROSS/6,6430:CROSS/6,19930:DOWN/6,20030:DOWN/6,20130:CROSS/6,20530:CROSS/6,20930:CROSS/6` | FreQ select, FreQmaker, difficulty, arena and song select, the warp, the song (frames ~7030-18500) to "YOU WIN!", player stats, Freestyle's tips and mode; sound all through |
+| Practice | the Solo script to `5630:CROSS/6`, then `6030:SQUARE/6,6400:CROSS/6,6800:CROSS/6,7200:CROSS/6` | "Practice mode" over the song |
+| Training | `2700:START/6,2880:CROSS/6,3130:CROSS/6,3230:CROSS/6,3330:CROSS/6,3530:CROSS/6,3730:CROSS/6,4030:CROSS/6,4330:CROSS/6,4630:CROSS/6,4930:CROSS/6` | program select, Basic Concepts Training, the controller tips and lessons, its narration |
+| Multiplayer > Game, 2 players | `2700:START/6,2880:DOWN/6,2980:CROSS/6,3180:CROSS/6,3450:CROSS/6,3650:CROSS/6,3900:CROSS/6,4100:CROSS/6,4400:CROSS/6,4800:CROSS/6,5200:CROSS/6,5600:CROSS/6,6000:CROSS/6`; player 2 `3030:START/6,3130:CROSS/6,3330:CROSS/6,3530:CROSS/6` | difficulty, power-ups, arena, song, a two-player song (scores, power-ups, the leader's monitor) |
+| Multiplayer > Game, 4 players | `2700:START/6,2880:DOWN/6,2980:CROSS/6,3450:CROSS/6,3750:DOWN/6,3850:DOWN/6,3950:CROSS/6,4250:CROSS/6,4500:CROSS/6,4750:CROSS/6,5050:CROSS/6,5350:CROSS/6,5650:CROSS/6,5950:CROSS/6,6250:CROSS/6`; players 2-4 `4250:CROSS/6,4500:CROSS/6,4750:CROSS/6` | four FreQs, a four-player song |
+| Multiplayer > Duel | `2700:START/6,2880:DOWN/6,2980:CROSS/6,3350:DOWN/6,3450:CROSS/6,3750:CROSS/6,4000:CROSS/6,4300:CROSS/6,4600:CROSS/6,4900:CROSS/6,5200:CROSS/6,5500:CROSS/6,5800:CROSS/6`; player 2 `3750:CROSS/6,4000:CROSS/6,4300:CROSS/6,4600:CROSS/6` | two FreQs, the duel (the AMP meters, catch phrases) |
+| Multiplayer > Remix | `2700:START/6,2880:DOWN/6,2980:CROSS/6,3180:CROSS/6,3450:TRIANGLE/6,3680:DOWN/6,3780:DOWN/6,3880:CROSS/6,4080:CROSS/6,4330:CROSS/6,4680:CROSS/6,5030:CROSS/6,5380:CROSS/6,5730:CROSS/6,6080:CROSS/6`; player 2 `4380:CROSS/6,4480:CROSS/6,4730:CROSS/6` | the remix editor (loops, effects, sections) |
+| Options, Game Settings, Credits | `2700:START/6,2880:DOWN/6,2980:DOWN/6,3080:DOWN/6,3200:CROSS/6,3500:CROSS/6,3900:TRIANGLE/6,4150:DOWN/6,4250:DOWN/6,4400:CROSS/6` | the settings, every credits page |
+
+Multiplayer's menus come in this order: the mode (Game, Duel, Remix), then the number of players (Game).
 
 ## Native renderer (in progress)
 
