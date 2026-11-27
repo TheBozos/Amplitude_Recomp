@@ -574,15 +574,16 @@ own rows into PC pages, which the game draws itself with its font, highlight and
 | Page | Rows |
 |---|---|
 | main | VIDEO, SOUND, CHEATS, SAVE STATES, QUIT GAME, BACK |
-| VIDEO | DISPLAY, RESOLUTION, RENDER SCALE, FRAME RATE, ANTIALIASING, TEXTURE SMOOTHING, TEXTURE UPSCALING, UPSCALING FILTER, WIDESCREEN, SHARPER EFFECTS, BACKGROUND PAUSE, APPLY AND SAVE, BACK |
+| VIDEO | DISPLAY, RESOLUTION, APPLY DISPLAY, RENDER SCALE, FRAME RATE, ANTIALIASING, TEXTURE SMOOTHING, TEXTURE UPSCALING, UPSCALING FILTER, WIDESCREEN, SHARPER EFFECTS, BACKGROUND PAUSE, BACK |
 | SOUND | AUDIO OFFSET, BACK |
 | CHEATS | AUTOPILOT, INFINITE ENERGY, UNLOCK ALL, BACK |
 | SAVE STATES | SLOT, SAVE STATE, LOAD STATE, BACK |
 
-VIDEO's window settings are BozoEngine's `bozo::app::video` (the F2 Video tab's), edited on a copy and applied and
-written to `video.ini` by APPLY AND SAVE (`video::post`, taken at the window's next frame). The label reads
-`APPLY AND SAVE *` while the copy differs from what is applied. Widescreen and sharper effects are the port's own and
-apply at once. The window build reaches them through hooks (`amp_options`); a headless run shows only the port's own.
+VIDEO's window settings are BozoEngine's `bozo::app::video` (the F2 Video tab's). Each is applied and written to
+`video.ini` as it changes (`video::post`, taken at the window's next frame), the display and resolution as applied.
+Those two change the window, so they wait for APPLY DISPLAY, the row under them, which reads `APPLY DISPLAY *` while
+they differ from what is applied. A first version had one APPLY AND SAVE at the page's bottom, twelve rows down: a
+player did not find it. Widescreen and sharper effects are the port's own. The window build reaches them through hooks (`amp_options`); a headless run shows only the port's own.
 
 The first version opened the window's F2 settings instead; the pages are what the other ports (TMB, Onimusha) have.
 
@@ -653,10 +654,13 @@ call hook that matched the names' addresses in a0-a3 and in what they point to).
   Circle, Start, Select and Square are written back as released in `scePadRead`'s data while a page is up. A button
   the pages took stays hidden until it is released: the game reads the pad more than once a frame, and a Triangle that
   left the pages also left the Options menu before this.
-- *Scrolling.* A page longer than the panel's rows (4 in Options, 6 in the pause menu) scrolls. Down on the last row
-  shows the next item instead of the game's cursor wrapping, and Up on the first shows the one before. The cursor
-  stops at the list's ends. Entering the pages, or opening one, brings the cursor up to the first item with presses
-  of Up the port gives the game (a frame pressed, a frame released).
+- *Scrolling.* A page longer than the panel's rows (4 in Options, 6 in the pause menu) scrolls, with `^` before the
+  top row when items are above and `v` after the bottom row when items are below. Up and Down are the port's: a press,
+  then a repeat while held (from 18 frames, every 5). Each one either scrolls the list at the panel's edge, or is given
+  to the game as one press (a frame pressed, a frame released) to move its cursor. The cursor stops at the list's ends.
+  The game never sees the player's own Up and Down: held, its own repeat moved its cursor past the port's scrolling and
+  wrapped it, and the list's end was never reached. Entering the pages, or opening one, brings the cursor up to the
+  first item the same way.
 - *Pressures.* The pad is in pressure mode (`0x79`): the game's cursor goes by the buttons' pressures too (from +8:
   Right, Left, Up, Down, Triangle, Circle, Cross, Square). A hidden Down whose pressure was left still moved the cursor,
   so hidden buttons' pressures are zeroed. While a page is up the left stick is Up / Down for the pages, and is centred

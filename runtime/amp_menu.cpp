@@ -6,8 +6,9 @@
 // the game's own text function, so the game draws them with its font, its highlight and its cursor:
 //   main          VIDEO, SOUND, CHEATS, SAVE STATES, QUIT GAME, BACK
 //   VIDEO         DISPLAY, RESOLUTION, RENDER SCALE, FRAME RATE, ANTIALIASING, TEXTURE SMOOTHING, TEXTURE UPSCALING,
-//                 UPSCALING FILTER (the window's settings, applied and saved by APPLY AND SAVE), WIDESCREEN, SHARPER
-//                 EFFECTS (the port's own, at once), BACKGROUND PAUSE, APPLY AND SAVE, BACK
+//                 UPSCALING FILTER (the window's settings, applied and saved at once; DISPLAY and RESOLUTION by
+//                 APPLY DISPLAY, after them), WIDESCREEN, SHARPER
+//                 EFFECTS (the port's own), BACKGROUND PAUSE, BACK
 //   SOUND         AUDIO OFFSET, BACK
 //   CHEATS        AUTOPILOT, INFINITE ENERGY, UNLOCK ALL, BACK
 //   SAVE STATES   SLOT, SAVE STATE, LOAD STATE, BACK
@@ -138,8 +139,9 @@ namespace amp
             uint64_t restoreAt = 0;      // until this vblank the panel's own labels stay up (the save taken meanwhile)
             uint64_t panelDrawn = 0;
             options::Video video;        // VIDEO's edits of the window's settings, applied by APPLY AND SAVE
-            int ups = 0;                 // Up presses still to give the game (a short page's cursor brought up)
-            uint64_t upAt = 0;           // the vblank of the last one given (one press, one release, a frame each)
+            int moves = 0;               // cursor moves still to give the game: Down presses (+) or Up presses (-)
+            uint64_t moveAt = 0;         // the vblank of the last half given (one press, one release, a frame each)
+            uint64_t heldSince = 0, repeatAt = 0, navAt = 0; // Up / Down held: their repeat
         } g_pages;
 
         uint64_t g_focusedAt = ~0ull; // the vblank a panel last drew with PC SETTINGS focused
@@ -206,6 +208,16 @@ namespace amp
                         rates.push_back(v.frameRate);
                     const auto resolutions = c.resolutions;
                     const int refresh = c.monitorRefresh;
+                    // A setting changed here is applied and saved at once, the display and resolution as they are applied
+                    // (those two wait for APPLY DISPLAY: they change the window).
+                    const auto live = [](const options::Video &edit) {
+                        options::Video now = edit;
+                        const options::Video applied = options::videoChoices().applied;
+                        now.mode = applied.mode;
+                        now.width = applied.width;
+                        now.height = applied.height;
+                        options::postVideo(now, true);
+                    };
                     l.push_back({[&v] { return std::string("DISPLAY: ") + (v.mode == 1 ? "FULLSCREEN" : v.mode == 2 ? "BORDERLESS" : "WINDOWED"); },
                                  [&v, modes](int d) { v.mode = step(modes, v.mode, d); }, "Window, fullscreen, borderless"});
                     l.push_back({[&v] {
@@ -220,13 +232,26 @@ namespace amp
                                      v.height = next.second;
                                  },
                                  "The window's size"});
+                    l.push_back({[&v] {
+                                     const options::Video a = options::videoChoices().applied;
+                                     return std::string(v.mode == a.mode && v.width == a.width && v.height == a.height ? "APPLY DISPLAY"
+                                                                                                                      : "APPLY DISPLAY *");
+                                 },
+                                 [&v](int d) {
+                                     if (d)
+                                         return;
+                                     std::printf("[amp:menu] VIDEO: display applied and saved\n");
+                                     options::postVideo(v, true);
+                                 },
+                                 "The display and size above"});
                     l.push_back({[&v] { return "RENDER SCALE: " + std::to_string(static_cast<int>(std::lround(v.renderScale * 100.0f))) + "%"; },
-                                 [&v, scales](int d) {
+                                 [&v, scales, live](int d) {
                                      float best = scales[2];
                                      for (float s : scales)
                                          if (std::fabs(s - v.renderScale) < 0.01f)
                                              best = s;
                                      v.renderScale = step(scales, best, d);
+                                     live(v);
                                  },
                                  "How sharp the 3D is drawn"});
                     l.push_back({[&v, refresh] {
@@ -235,22 +260,22 @@ namespace amp
                                              : v.frameRate < 0 ? (refresh > 0 ? "MONITOR (" + std::to_string(refresh) + ")" : std::string("MONITOR"))
                                                                : std::to_string(v.frameRate));
                                  },
-                                 [&v, rates](int d) { v.frameRate = step(rates, v.frameRate, d); },
+                                 [&v, rates, live](int d) { v.frameRate = step(rates, v.frameRate, d), live(v); },
                                  "60, or the monitor's rate"});
                     l.push_back({[&v] { return "ANTIALIASING: " + (v.antiAliasing ? times(v.antiAliasing) : std::string("OFF")); },
-                                 [&v, aa](int d) { v.antiAliasing = step(aa, v.antiAliasing, d); }, "Smoother edges (MSAA)"});
+                                 [&v, aa, live](int d) { v.antiAliasing = step(aa, v.antiAliasing, d), live(v); }, "Smoother edges (MSAA)"});
                     l.push_back({[&v] {
                                      return "TEXTURE SMOOTHING: " + (v.textureSmoothing == 0   ? std::string("OFF")
                                                                      : v.textureSmoothing == 1 ? std::string("TRILINEAR")
                                                                                                : times(v.textureSmoothing));
                                  },
-                                 [&v, smoothing](int d) { v.textureSmoothing = step(smoothing, v.textureSmoothing, d); },
+                                 [&v, smoothing, live](int d) { v.textureSmoothing = step(smoothing, v.textureSmoothing, d), live(v); },
                                  "Off is the console's own look"});
                     l.push_back({[&v] { return "TEXTURE UPSCALING: " + (v.upscale > 1 ? times(v.upscale) : std::string("OFF")); },
-                                 [&v, upscales](int d) { v.upscale = step(upscales, v.upscale, d); },
+                                 [&v, upscales, live](int d) { v.upscale = step(upscales, v.upscale, d), live(v); },
                                  "Textures from larger copies"});
                     l.push_back({[&v] { return std::string("UPSCALING FILTER: ") + (v.smoothUpscale ? "SMOOTH" : "EDGE"); },
-                                 [&v](int) { v.smoothUpscale = !v.smoothUpscale; }, "How the larger copies are made"});
+                                 [&v, live](int) { v.smoothUpscale = !v.smoothUpscale, live(v); }, "How the larger copies are made"});
                 }
                 l.push_back({[] { return "WIDESCREEN: " + onOff(options::widescreen()); },
                              [](int) { options::applyWidescreen(!options::widescreen()); },
@@ -264,18 +289,16 @@ namespace amp
                 if (options::videoAvailable())
                 {
                     l.push_back({[&v] { return "BACKGROUND PAUSE: " + onOff(v.pauseInBackground); },
-                                 [&v](int) { v.pauseInBackground = !v.pauseInBackground; },
+                                 [&v](int) {
+                                     v.pauseInBackground = !v.pauseInBackground;
+                                     options::Video now = v;
+                                     const options::Video applied = options::videoChoices().applied;
+                                     now.mode = applied.mode;
+                                     now.width = applied.width;
+                                     now.height = applied.height;
+                                     options::postVideo(now, true);
+                                 },
                                  "Pause when not in focus"});
-                    l.push_back({[&v] {
-                                     return std::string(v == options::videoChoices().applied ? "APPLY AND SAVE" : "APPLY AND SAVE *");
-                                 },
-                                 [&v](int d) {
-                                     if (d)
-                                         return;
-                                     std::printf("[amp:menu] VIDEO: applied and saved\n");
-                                     options::postVideo(v, true);
-                                 },
-                                 "Apply and keep these settings"});
                 }
                 l.push_back(back);
                 break;
@@ -380,6 +403,12 @@ namespace amp
                 const std::vector<Item> l = items(p.page);
                 for (size_t i = 0; i < labels.size(); ++i)
                     labels[i] = p.offset + i < l.size() ? l[p.offset + i].label() : std::string();
+                // A page longer than the rows shows it scrolls: ^ before the top row with items above, v after the bottom
+                // row with items below.
+                if (p.offset > 0 && !labels.empty())
+                    labels.front() = "^ " + labels.front();
+                if (p.offset + labels.size() < l.size() && !labels.empty())
+                    labels.back() += " v";
             }
             for (size_t i = 0; i < p.components.size(); ++i)
             {
@@ -422,7 +451,7 @@ namespace amp
             p.panelDrawn = g_pages.panelDrawn;
             g_pages = std::move(p);
             // The cursor is on PC SETTINGS, the last row: brought up to the first item.
-            g_pages.ups = static_cast<int>(focusedRow(ram));
+            g_pages.moves = -static_cast<int>(focusedRow(ram));
             show(call, ram);
             return true;
         }
@@ -460,7 +489,7 @@ namespace amp
                     return;
                 }
                 // The page from its first item, the cursor brought up to it.
-                p.ups = static_cast<int>(focusedRow(ram));
+                p.moves = -static_cast<int>(focusedRow(ram));
             }
             show(call, ram);
         }
@@ -584,31 +613,44 @@ namespace amp
                 }
                 p.restoreAt = 0;
             }
-            // Up given to the game, a frame pressed and a frame released, until the cursor is on the page's items.
-            if (p.ups > 0)
+            // The cursor moves given to the game, a frame pressed and a frame released each.
+            if (p.moves != 0 && now != p.moveAt)
             {
-                if (now != p.upAt)
-                {
-                    const bool press = (p.upAt & 1u) == 0;
-                    p.upAt = now;
-                    if (press)
-                        give = kUp;
-                    else
-                        --p.ups;
-                }
-                write(kTaken | kUp | kDown);
-                if (p.ups == 0)
-                    show(call, ram);
-                return;
+                const bool press = (p.moveAt & 1u) == 0;
+                p.moveAt = now | (press ? 1u : 0u); // (its low bit: a press given, its release next)
+                p.moveAt = press ? (now | 1u) : (now & ~1ull);
+                if (press)
+                    give = p.moves > 0 ? kDown : kUp;
+                else
+                    p.moves += p.moves > 0 ? -1 : 1;
             }
             show(call, ram); // (a label refreshed the frame after a save, or as a value changed elsewhere)
             const std::vector<Item> list = items(p.page);
-            const size_t rows = p.components.size(), row = focusedRow(ram), index = p.offset + row;
+            const size_t rows = p.components.size();
+            // The row the cursor is on once the moves given are taken.
+            const int virtualRow = std::clamp(static_cast<int>(focusedRow(ram)) + p.moves, 0, static_cast<int>(rows) - 1);
+            const size_t row = static_cast<size_t>(virtualRow), index = p.offset + row;
             if (static const bool trace = std::getenv("AMP_TRACE_MENU") != nullptr; trace && pressed)
                 std::printf("[amp:menu] vblank %llu pad %x: pressed %04x, row %zu, offset %zu, item %zu of %zu\n",
                             static_cast<unsigned long long>(now), pad, pressed, row, p.offset, index, list.size());
-            uint32_t hidden = kTaken;
             taken |= down & kTaken;
+            // Up / Down: the port's (a press, then a repeat while held, once a vblank), the game's cursor moved by the
+            // presses the port gives it, the list scrolled at the panel's edges; the cursor stops at the list's ends.
+            int nav = 0;
+            if (pressed & (kUp | kDown))
+            {
+                nav = (pressed & kDown) ? 1 : -1;
+                p.heldSince = p.repeatAt = now;
+            }
+            else if ((down & (kUp | kDown)) && now != p.navAt && now - p.heldSince >= 18 && now - p.repeatAt >= 5)
+            {
+                nav = (down & kDown) ? 1 : -1;
+                p.repeatAt = now;
+            }
+            if (nav)
+                p.navAt = now;
+            if (p.moves != 0 && nav)
+                nav = 0; // (one move at a time: the next once the game's cursor has taken this one)
             if (pressed & (kTriangle | kCircle))
             {
                 open(p.page == Page::Main ? Page::Off : Page::Main);
@@ -624,32 +666,26 @@ namespace amp
                 list[index].act((pressed & kLeft) ? -1 : 1);
                 settle(call, ram);
             }
-            else if (pressed & kDown)
+            else if (nav > 0 && index + 1 < list.size())
             {
-                // The list's last item: the cursor stays; the panel's last row with more below: the list scrolls.
-                if (index + 1 >= list.size())
-                    hidden |= kDown, taken |= kDown;
-                else if (row + 1 >= rows)
-                {
+                if (row + 1 >= rows)
                     ++p.offset;
-                    hidden |= kDown, taken |= kDown;
-                }
+                else
+                    p.moves = 1;
                 p.quitAsked = false;
                 show(call, ram);
             }
-            else if (pressed & kUp)
+            else if (nav < 0)
             {
-                if (row == 0)
-                {
-                    if (p.offset > 0)
-                        --p.offset;
-                    hidden |= kUp, taken |= kUp;
-                }
+                if (row > 0)
+                    p.moves = -1;
+                else if (p.offset > 0)
+                    --p.offset;
                 p.quitAsked = false;
                 show(call, ram);
             }
-            // The game sees none of the pages' buttons (Up and Down stay its, unless they scrolled or stopped).
-            write(hidden | taken);
+            // The game sees none of the pages' buttons, Up and Down but the presses given.
+            write(kTaken | kUp | kDown | taken);
         }
 
         // 0x242d38(text, string): a Text's label set. The Options help panel's Text is the one the game gives PC

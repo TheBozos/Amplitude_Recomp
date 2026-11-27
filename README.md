@@ -151,15 +151,15 @@ runner prints where the game stops and what is not native yet. Play-test switche
 The game's own Options menu and pause menu have a **PC SETTINGS** entry, and behind it pages the game itself draws in
 its menus, with its font and cursor:
 
-- **VIDEO**: display (windowed, fullscreen, borderless), resolution, render scale, frame rate, antialiasing, texture
-  smoothing, texture upscaling and its filter, widescreen, sharper effects, background pause, then APPLY AND SAVE (the
-  window's settings, kept in `video.ini`; widescreen and sharper effects at once).
+- **VIDEO**: display (windowed, fullscreen, borderless) and resolution, applied by the APPLY DISPLAY row under them;
+  render scale, frame rate, antialiasing, texture smoothing, texture upscaling and its filter, widescreen, sharper
+  effects and background pause, each applied as you change it. All are kept (`video.ini`, `amplitude.ini`).
 - **SOUND**: the audio offset.
 - **CHEATS**: autopilot, infinite energy, unlock all.
 - **SAVE STATES**: the slot, save, load.
 - **QUIT GAME**: press X twice.
 
-Up / Down choose (a long page scrolls), Cross acts, Left / Right change a value, Triangle or Circle go back. The port
+Up / Down choose (hold to repeat; a long page scrolls, `^` and `v` at its ends saying there is more), Cross acts, Left / Right change a value, Triangle or Circle go back. The port
 builds the entry at startup from your disc (the menus' files edited in memory; `AMP_NO_PC_MENU=1` keeps the game's
 own). The controls are rebound in F2.
 
