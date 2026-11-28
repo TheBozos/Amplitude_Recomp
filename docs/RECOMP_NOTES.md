@@ -302,7 +302,7 @@ data to them over SIF.
   mix stopped at the IRQ, the handler ran at once (the IOP's work takes no time here) and the transfer landed 2 samples
   before the half had played: its last two samples were the next half's, a click at nearly every half (1,519 in 65 s).
   On the console the handler's software mix of 256 samples takes far longer than the IRQ's 8 samples of lead.
-  BozoEngine (branch `amp/output-irq-stop`): the native IRX host's mix stops where the output reaches an enabled IRQ
+  BozoEngine (#165, merged): the native IRX host's mix stops where the output reaches an enabled IRQ
   address, and the SPU2 interrupt's handler runs 32 samples after it (`Libsd::kIrqResponse`). Counted in a headless
   recording of the tutorial (sharp second-difference spikes, 85-150 s): 265 clicks before, 7 after, the levels the
   same; the song select's previews: about 100 a second before, a few in 17 s after.
