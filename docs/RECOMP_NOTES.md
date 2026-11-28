@@ -611,6 +611,15 @@ The intro now ends about 3,770 frames earlier: the title from frame ~2470 (it wa
 The pad scripts from boot in these notes (the song's, Multi's) were written before and give the old frames: move
 their presses after the intro 3,770 frames earlier. States keep their own frame numbers.
 
+**Black squares after PLAYER STATS.** Leaving PLAYER STATS, the arena is covered by puffs of smoke (128 x 128 4-bit
+texture, dark with faint specks, its alpha 0x80 throughout) drawn with ALPHA `0xa1`: (Cd - Cs) * FIX + 0, FIX 0x80,
+the scene darkened by the texture. BozoEngine's `blendOf` reduces ALPHA to a few blends and falls back to
+(Cs - Cd) * As + Cd for the rest, so each puff was drawn as an opaque black square. Any blend that falls back but is
+not that form (`0x44`) is now handed to the renderer as the GS's own blend (`Material::gsBlend` with ALPHA's fields:
+a reverse subtract here), in `material()` of `amp_gs_state.cpp`. Found with a save state the player made at the
+arena's outro and a few Cross presses; the draw was found by listing the native triangles over a pixel (a temporary
+pick) and dumping their textures. The menus and a song were compared with captures from before: the same.
+
 ## The game's menus: PC SETTINGS
 
 The Options menu and the pause menu have a PC SETTINGS entry, in the game's own style. Selecting it turns the panel's

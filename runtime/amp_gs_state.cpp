@@ -756,6 +756,18 @@ namespace amp::gs
             m.tex0 = c.tex0;
             m.alphaBlend = (attrs >> 6) & 1u;
             m.blend = m.alphaBlend ? bozo::render::blendOf(c.alpha) : Material::Blend::Opaque; // PRIM.ABE off: no blending
+            // A form the reduced blends do not hold (blendOf falls back to (Cs - Cd) * As + Cd, ALPHA 0x44): the GS's own
+            // blend. The arena's smoke after PLAYER STATS is (Cd - Cs) * FIX + 0 (0xa1), the scene darkened by the texture:
+            // drawn as alpha blending, each puff's black square covered the scene.
+            if (m.alphaBlend && m.blend == Material::Blend::Alpha && (c.alpha & 0xFFu) != 0x44u)
+            {
+                m.gsBlend = true;
+                m.blendA = static_cast<uint8_t>(c.alpha & 3u);
+                m.blendB = static_cast<uint8_t>((c.alpha >> 2) & 3u);
+                m.blendC = static_cast<uint8_t>((c.alpha >> 4) & 3u);
+                m.blendD = static_cast<uint8_t>((c.alpha >> 6) & 3u);
+                m.blendFix = static_cast<uint8_t>((c.alpha >> 32) & 0xFFu);
+            }
             const uint64_t test = c.test;
             m.alphaTest = test & 1u;
             if (m.alphaTest)

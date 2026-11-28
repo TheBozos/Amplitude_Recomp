@@ -79,7 +79,7 @@ Captured from the current build at 960x720.
 | ![Two players](docs/screenshots/gameplay-2p.jpg) | ![Four players (multitap)](docs/screenshots/gameplay-4p.jpg) | ![Remix mode](docs/screenshots/remix.jpg) |
 | ![Duel](docs/screenshots/duel.jpg) | ![Basic training, the blasters' glows](docs/screenshots/gameplay-training.jpg) | ![PC SETTINGS' pages in the Options menu](docs/screenshots/options-pc-settings.jpg) |
 | ![PC SETTINGS in the pause menu](docs/screenshots/pause-pc-settings.jpg) | ![PC SETTINGS' VIDEO page, drawn by the game](docs/screenshots/pc-settings-video.jpg) | ![Widescreen: the HUD out at the screen's edges](docs/screenshots/gameplay-widescreen.jpg) |
-| ![PC SETTINGS in the training's pause menu](docs/screenshots/training-pause-pc-settings.jpg) | | |
+| ![PC SETTINGS in the training's pause menu](docs/screenshots/training-pause-pc-settings.jpg) | ![The arena's smoke after PLAYER STATS](docs/screenshots/arena-smoke.jpg) | |
 
 ## Goal
 
